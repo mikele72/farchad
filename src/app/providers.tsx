@@ -1,44 +1,49 @@
 'use client';
 
-import dynamic from 'next/dynamic';
-import type { Session } from 'next-auth';
-import { SessionProvider } from 'next-auth/react';
-import { AuthKitProvider } from '@farcaster/auth-kit';
-import { MiniAppProvider } from '@neynar/react';
-import { SafeFarcasterSolanaProvider } from '~/components/providers/SafeFarcasterSolanaProvider';
-import { ANALYTICS_ENABLED, RETURN_URL } from '~/lib/constants';
+import { ReactNode, useState } from 'react';
+import { WagmiProvider, createConfig, http } from 'wagmi';
+import { base, baseSepolia } from 'wagmi/chains'; // Usa baseSepolia per i test
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { OnchainKitProvider } from '@coinbase/onchainkit';
+import { coinbaseWallet, injected, metaMask } from 'wagmi/connectors';
 
-const WagmiProvider = dynamic(
-  () => import('~/components/providers/WagmiProvider'),
-  {
-    ssr: false,
-  }
-);
+// 1. Configura Wagmi (Il connettore alla Blockchain)
+const config = createConfig({
+  chains: [baseSepolia], // Usa Sepolia per lo sviluppo
+  transports: {
+    [baseSepolia.id]: http(),
+  },
+  connectors: [
+    metaMask(), // Supporto esplicito per MetaMask
+    injected(), // Supporto generico per wallet browser
+    coinbaseWallet({
+      appName: 'farchad',
+      preference: 'smartWalletOnly', 
+    }),
+  ],
+});
 
-export function Providers({
-  session,
-  children,
-}: {
-  session: Session | null;
-  children: React.ReactNode;
-}) {
-  const solanaEndpoint =
-    process.env.SOLANA_RPC_ENDPOINT || 'https://solana-rpc.publicnode.com';
+export function Providers({ children }: { children: ReactNode }) {
+  // Utilizziamo useState per garantire che QueryClient sia creato solo una volta lato client
+  const [queryClient] = useState(() => new QueryClient());
+
   return (
-    <SessionProvider session={session}>
-      <WagmiProvider>
-        <MiniAppProvider
-          analyticsEnabled={ANALYTICS_ENABLED}
-          backButtonEnabled={true}
-          returnUrl={RETURN_URL}
+    <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>
+        <OnchainKitProvider
+          apiKey={process.env.NEXT_PUBLIC_ONCHAINKIT_API_KEY}
+          chain={baseSepolia}
+          config={{
+             appearance: { mode: "auto", theme: "base" },
+          }}
+          miniKit={{
+            enabled: true,
+            autoConnect: true,
+          }}
         >
-          <SafeFarcasterSolanaProvider endpoint={solanaEndpoint}>
-            <AuthKitProvider config={{}}>
-              {children}
-            </AuthKitProvider>
-          </SafeFarcasterSolanaProvider>
-        </MiniAppProvider>
-      </WagmiProvider>
-    </SessionProvider>
+          {children}
+        </OnchainKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
   );
 }

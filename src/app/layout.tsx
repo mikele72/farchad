@@ -1,28 +1,17 @@
-import type { Metadata } from 'next';
+import { ReactNode } from "react";
+import './globals.css'; 
 
-import { getSession } from '~/auth';
-import '~/app/globals.css';
-import { Providers } from '~/app/providers';
-import { APP_NAME, APP_DESCRIPTION } from '~/lib/constants';
+import { Providers } from './providers'; 
 
-export const metadata: Metadata = {
-  title: APP_NAME,
-  description: APP_DESCRIPTION,
-};
-
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode;
+  children: ReactNode;
 }>) {
-  const session = await getSession();
-
   return (
     <html lang="en">
       <body>
-        <Providers session={session}>
-          {children}
-        </Providers>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

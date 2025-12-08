@@ -1,24 +1,302 @@
-import { Metadata } from "next";
-import App from "./app";
-import { APP_NAME, APP_DESCRIPTION, APP_OG_IMAGE_URL } from "~/lib/constants";
-import { getMiniAppEmbedMetadata } from "~/lib/utils";
+'use client';
 
-export const revalidate = 300;
+import React, { useCallback, useState, useEffect } from 'react';
+import { useMiniKit } from '@coinbase/onchainkit/minikit';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useConnect } from 'wagmi';
+import { baseSepolia } from 'wagmi/chains'; // Assicurati di usare Sepolia per i test
+import { minikitConfig } from '../minikit.config'; 
 
-export async function generateMetadata(): Promise<Metadata> {
-  return {
-    title: APP_NAME,
-    openGraph: {
-      title: APP_NAME,
-      description: APP_DESCRIPTION,
-      images: [APP_OG_IMAGE_URL],
-    },
-    other: {
-      "fc:frame": JSON.stringify(getMiniAppEmbedMetadata()),
-    },
-  };
+// --- STILI E CONFIGURAZIONE ---
+const THEME = {
+  primary: '#835fb3',
+  primaryDark: '#6a4ca0',
+  background: '#1a1025',
+  cardBg: '#2d1b4e',
+  text: '#ffffff',
+  textSecondary: '#d8b4fe',
+  success: '#4ade80',
+  successBg: '#14532d',
+  border: '#4c2f7a',
+  opensea: '#2081e2',
+  share: '#10b981',
+  debugInput: '#4a044e'
+};
+
+const CHAD_NFT_CONTRACT_ADDRESS = '0xA72449e2Bb68E7A331921586498739a56b9d4D25';
+
+const CHAD_NFT_ABI = [
+  {
+    inputs: [
+      { internalType: "address", name: "to", type: "address" },
+      { internalType: "string", name: "uri", type: "string" },
+      { internalType: "uint256", name: "fid", type: "uint256" },
+    ],
+    name: "safeMint",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+] as const;
+
+enum ProcessState {
+  INITIAL = 'INITIAL',
+  FETCHING_PFP = 'FETCHING_PFP',
+  TRANSFORMING = 'TRANSFORMING',
+  UPLOADING_IPFS = 'UPLOADING_IPFS',
+  MINT_READY = 'MINT_READY',
+  MINTING = 'MINTING',
+  MINT_SUCCESS = 'MINT_SUCCESS',
+}
+
+interface UserData {
+  address: `0x${string}`;
+  fid: number;
+  pfpUrl: string;
+  displayName?: string;
 }
 
 export default function Home() {
-  return (<App />);
+  const { user, connect: connectMiniKit } = useMiniKit();
+  const { address, isConnected } = useAccount();
+  const { connect, connectors } = useConnect();
+  
+  const { data: hash, writeContract, error: mintError } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess: isTxSuccessful } = useWaitForTransactionReceipt({ hash });
+
+  const [processState, setProcessState] = useState<ProcessState>(ProcessState.INITIAL);
+  const [error, setError] = useState<string | null>(null);
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [chadImage, setChadImage] = useState<string | null>(null);
+  const [metadataUri, setMetadataUri] = useState<string | null>(null);
+  const [traits, setTraits] = useState<any[]>([]);
+  
+  // Stato per il FID manuale (Debug/Test)
+  const [manualFid, setManualFid] = useState<string>("");
+
+  useEffect(() => {
+    if (isTxSuccessful) setProcessState(ProcessState.MINT_SUCCESS);
+  }, [isTxSuccessful]);
+
+  useEffect(() => {
+    if (mintError) {
+        setError(`Errore Mint: ${mintError.message.substring(0, 50)}...`);
+        setProcessState(ProcessState.MINT_READY);
+    }
+  }, [mintError]);
+
+  const handleConnect = useCallback(() => {
+    if (connectMiniKit) {
+      connectMiniKit();
+    } else {
+      const coinbaseConnector = connectors.find(c => c.id === 'coinbaseWalletSDK');
+      if (coinbaseConnector) connect({ connector: coinbaseConnector });
+    }
+  }, [connectMiniKit, connectors, connect]);
+
+  const handleCreateChad = async () => {
+    // USA IL FID MANUALE SE C'È, ALTRIMENTI QUELLO RILEVATO, ALTRIMENTI IL FALLBACK
+    const effectiveFid = manualFid ? parseInt(manualFid) : (user?.fid || 999999);
+    
+    const wallet = (user?.walletAddress || address) as `0x${string}`;
+
+    if (!wallet) {
+        setError("Collega il wallet per iniziare!");
+        return;
+    }
+
+    setError(null);
+    try {
+      // A. Recupero PFP
+      setProcessState(ProcessState.FETCHING_PFP);
+      let currentPfp = user?.pfpUrl;
+      
+      // Se non abbiamo il PFP ma abbiamo un FID, lo chiediamo all'API
+      if (!currentPfp) {
+          try {
+            const res = await fetch(`/api/get-pfp?fid=${effectiveFid}`);
+            const data = await res.json();
+            if (data.pfpUrl) currentPfp = data.pfpUrl;
+          } catch (e) { console.log('Errore PFP API', e)}
+      }
+      
+      if (!currentPfp) currentPfp = "https://placehold.co/400x400/png?text=NO+PFP";
+
+      setUserData({ address: wallet, fid: effectiveFid, pfpUrl: currentPfp, displayName: user?.username || `Fid-${effectiveFid}` });
+
+      // B. AI Transformation
+      setProcessState(ProcessState.TRANSFORMING);
+      const aiRes = await fetch('/api/transform', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            pfpUrl: currentPfp,
+            fid: effectiveFid 
+        })
+      });
+      const aiData = await aiRes.json();
+      
+      if (!aiData.imageUrl) throw new Error("Errore generazione AI");
+      
+      setChadImage(aiData.imageUrl);
+      setTraits(aiData.attributes || []);
+
+      // C. Upload IPFS
+      setProcessState(ProcessState.UPLOADING_IPFS);
+      const ipfsRes = await fetch('/api/upload-to-ipfs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            imageUrl: aiData.imageUrl, 
+            name: `Chad #${effectiveFid}`, 
+            description: "Generated by Farchad App", 
+            fid: effectiveFid,
+            attributes: aiData.attributes 
+        })
+      });
+      const ipfsData = await ipfsRes.json();
+      if (!ipfsData.metadataUri) throw new Error("Errore IPFS");
+
+      setMetadataUri(ipfsData.metadataUri);
+      setProcessState(ProcessState.MINT_READY);
+
+    } catch (e: any) {
+      setError(e.message || "Errore sconosciuto");
+      setProcessState(ProcessState.INITIAL);
+    }
+  };
+
+  const handleMint = () => {
+    if (!metadataUri || !userData) return;
+    setProcessState(ProcessState.MINTING);
+    
+    writeContract({
+      address: CHAD_NFT_CONTRACT_ADDRESS as `0x${string}`,
+      abi: CHAD_NFT_ABI,
+      functionName: 'safeMint',
+      args: [userData.address, metadataUri, BigInt(userData.fid)],
+      chainId: baseSepolia.id, 
+    });
+  };
+
+  const isUserConnected = isConnected || !!user;
+  
+  // *** DEFINIZIONE VARIABILE MANCANTE ***
+  const displayImage = chadImage || userData?.pfpUrl || user?.pfpUrl || "https://placehold.co/400x400/2d1b4e/835fb3/png?text=?";
+
+  return (
+    <div style={styles.container}>
+      <div style={styles.header}>
+        <h1 style={styles.title}>MINT FARCHAD</h1>
+        <p style={styles.subtitle}>Create your unique CHAD-style NFT 🐵</p>
+        <div style={styles.statsBadge}>LIVE ON BASE SEPOLIA 🔵</div>
+      </div>
+
+      <div style={styles.mainCard}>
+        {error && <div style={styles.errorBox}>⚠️ {error}</div>}
+
+        {isUserConnected ? (
+           <div style={styles.profileCard}>
+             <div style={styles.profileHeader}>YOUR PROFILE</div>
+             <div style={styles.profileContent}>
+               <img 
+                 src={userData?.pfpUrl || user?.pfpUrl || "https://placehold.co/50x50/png"} 
+                 style={styles.profileImage} 
+                 alt="Profile"
+               />
+               <div style={styles.profileInfo}>
+                 <div style={styles.username}>@{userData?.displayName || user?.username || "User"}</div>
+                 <div style={styles.statusText}>Connected</div>
+               </div>
+               <div style={styles.checkIcon}>✓</div>
+             </div>
+
+             {/* CAMPO DEBUG FID */}
+             <div style={{marginTop: '15px', borderTop: `1px solid ${THEME.border}`, paddingTop: '10px'}}>
+               <label style={{color: THEME.textSecondary, fontSize: '0.8rem', display: 'block', marginBottom: '5px'}}>
+                 TEST FID (Lascia vuoto per il tuo):
+               </label>
+               <input 
+                 type="number" 
+                 placeholder="Es. 22731" 
+                 value={manualFid}
+                 onChange={(e) => setManualFid(e.target.value)}
+                 style={styles.debugInput}
+               />
+             </div>
+           </div>
+        ) : (
+           <div style={{...styles.profileCard, opacity: 0.5}}>
+             <div style={styles.profileHeader}>YOUR PROFILE</div>
+             <div style={{padding:'15px', textAlign:'center', color: THEME.textSecondary}}>Connect wallet to start</div>
+           </div>
+        )}
+
+        <div style={styles.previewContainer}>
+           {(processState === ProcessState.TRANSFORMING || processState === ProcessState.UPLOADING_IPFS || processState === ProcessState.FETCHING_PFP) ? (
+              <div style={styles.placeholderBox}>
+                  <div style={styles.loadingText}>
+                    {processState === ProcessState.FETCHING_PFP && "GETTING PFP..."}
+                    {processState === ProcessState.TRANSFORMING && "GENERATING CHAD AI..."}
+                    {processState === ProcessState.UPLOADING_IPFS && "SAVING TO IPFS..."}
+                  </div>
+              </div>
+           ) : (
+             <img src={displayImage} style={styles.previewImage} alt="Preview" />
+           )}
+           
+           {chadImage && traits.some(t => t.trait_type === 'Rarity' && (t.value === 'RARE' || t.value === 'LEGENDARY')) && (
+             <div style={styles.rarityBadge}>✨ RARE TRAIT!</div>
+           )}
+        </div>
+
+        <div style={styles.actionsArea}>
+          {!isUserConnected ? (
+            <button onClick={() => handleConnect()} style={styles.primaryButton}>CONNECT WALLET</button>
+          ) : processState === ProcessState.INITIAL ? (
+            <button onClick={handleCreateChad} style={styles.primaryButton}>CREATE CHAD AI</button>
+          ) : processState === ProcessState.MINT_READY ? (
+            <button onClick={handleMint} style={styles.primaryButton}>MINT NFT NOW</button>
+          ) : (processState === ProcessState.MINTING || isConfirming) ? (
+            <button disabled style={{...styles.primaryButton, opacity:0.7}}>MINTING...</button>
+          ) : processState === ProcessState.MINT_SUCCESS ? (
+            <div style={styles.successContainer}>
+                <div style={styles.successBadge}>✓ MINTED!</div>
+                <button onClick={() => window.open(`https://warpcast.com/~/compose?text=I%20am%20a%20Chad!&embeds[]=https://zora.co/collect/base:${CHAD_NFT_CONTRACT_ADDRESS}`, '_blank')} style={styles.shareButton}>SHARE</button>
+                <button onClick={() => window.open(`https://testnets.opensea.io/assets/base-sepolia/${CHAD_NFT_CONTRACT_ADDRESS}`, '_blank')} style={styles.openseaButton}>OPENSEA</button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
 }
+
+const styles: { [key: string]: React.CSSProperties } = {
+  container: { minHeight: '100vh', backgroundColor: THEME.background, color: THEME.text, fontFamily: 'sans-serif', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px' },
+  header: { textAlign: 'center', marginBottom: '30px', maxWidth: '600px' },
+  title: { fontSize: '3rem', fontWeight: '900', color: THEME.primary, margin: '0 0 10px 0', textTransform: 'uppercase' },
+  subtitle: { color: '#ccc', fontSize: '1rem', marginBottom: '20px' },
+  statsBadge: { display: 'inline-block', backgroundColor: '#3e2c16', border: `2px solid ${THEME.primary}`, color: '#fbbf24', padding: '8px 20px', borderRadius: '20px', fontWeight: 'bold' },
+  mainCard: { width: '100%', maxWidth: '400px', backgroundColor: '#251830', border: `4px solid ${THEME.border}`, borderRadius: '20px', padding: '20px' },
+  profileCard: { backgroundColor: THEME.cardBg, border: `2px solid ${THEME.primary}`, borderRadius: '12px', padding: '12px', marginBottom: '20px', position: 'relative' },
+  profileHeader: { fontWeight: 'bold', color: '#fbbf24', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '10px' },
+  profileContent: { display: 'flex', alignItems: 'center', gap: '15px' },
+  profileImage: { width: '50px', height: '50px', borderRadius: '50%', border: '2px solid #fff', objectFit: 'cover' },
+  profileInfo: { display: 'flex', flexDirection: 'column' },
+  username: { fontWeight: 'bold', fontSize: '1.2rem', color: '#fff' },
+  statusText: { fontSize: '0.8rem', color: THEME.textSecondary },
+  checkIcon: { marginLeft: 'auto', backgroundColor: THEME.primary, color: '#fff', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 'bold' },
+  previewContainer: { width: '100%', aspectRatio: '1 / 1', backgroundColor: '#000', borderRadius: '12px', border: `4px solid ${THEME.border}`, overflow: 'hidden', marginBottom: '20px', position: 'relative' },
+  previewImage: { width: '100%', height: '100%', objectFit: 'cover' },
+  placeholderBox: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a1025' },
+  loadingText: { color: THEME.primary, fontWeight: 'bold', fontSize: '1.2rem' },
+  actionsArea: { display: 'flex', flexDirection: 'column', gap: '10px' },
+  primaryButton: { width: '100%', padding: '16px', backgroundColor: THEME.primary, color: '#fff', border: 'none', borderRadius: '12px', fontSize: '1.2rem', fontWeight: 'bold', textTransform: 'uppercase', cursor: 'pointer' },
+  successContainer: { display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' },
+  successBadge: { backgroundColor: THEME.successBg, color: THEME.success, border: `2px solid ${THEME.success}`, padding: '12px', borderRadius: '12px', textAlign: 'center', fontWeight: 'bold' },
+  shareButton: { width: '100%', padding: '14px', backgroundColor: THEME.share, color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' },
+  openseaButton: { width: '100%', padding: '14px', backgroundColor: THEME.opensea, color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' },
+  errorBox: { backgroundColor: '#7f1d1d', color: '#fecaca', padding: '10px', borderRadius: '8px', marginBottom: '15px', border: '1px solid #ef4444', fontSize: '0.9rem' },
+  rarityBadge: { position: 'absolute', top: '10px', right: '10px', backgroundColor: '#fbbf24', color: '#000', padding: '5px 10px', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.8rem', boxShadow: '0 2px 5px rgba(0,0,0,0.3)' },
+  debugInput: { width: '100%', padding: '8px', borderRadius: '6px', border: `1px solid ${THEME.border}`, backgroundColor: '#1e1136', color: '#fff', fontSize: '1rem', marginTop: '5px' }
+};
