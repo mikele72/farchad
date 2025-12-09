@@ -1,15 +1,16 @@
 import { baseSepolia } from 'wagmi/chains';
-import { type MiniKitConfig } from '@coinbase/onchainkit/minikit';
 
-export const minikitConfig: MiniKitConfig = {
+// Ho rimosso l'importazione di 'MiniKitConfig' che causava l'errore.
+// Ora esportiamo l'oggetto direttamente senza forzare il tipo.
+
+export const minikitConfig = {
   miniapp: {
-    name: 'Chad Maker NFT',
+    name: 'Farchad',
     iconUrl: 'https://placehold.co/600x400/835fb3/ffffff/png?text=CHAD', 
   },
-  // Imposta la chain su Base Sepolia per i test
   chain: baseSepolia, 
   wallet: {
-    appName: 'Chad Maker NFT',
+    appName: 'Farchad',
     appLogoUrl: 'https://placehold.co/600x400/835fb3/ffffff/png?text=CHAD',
     chains: [baseSepolia],
   },

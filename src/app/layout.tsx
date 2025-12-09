@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import './globals.css'; 
+// Assicurati che NON ci sia: import '@coinbase/onchainkit/styles.css';
 
 import { Providers } from './providers'; 
 

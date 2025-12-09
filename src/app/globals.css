@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* NESSUN @import '@coinbase...' QUI */
+/* NESSUNA IMPORTAZIONE DI ONCHAINKIT QUI PER EVITARE IL BLOCCO */
 
 :root {
   --foreground-rgb: 0, 0, 0;

@@ -2,29 +2,29 @@
 
 import { ReactNode, useState } from 'react';
 import { WagmiProvider, createConfig, http } from 'wagmi';
-import { base, baseSepolia } from 'wagmi/chains'; // Usa baseSepolia per i test
+import { baseSepolia } from 'wagmi/chains'; // Usiamo Sepolia per il test
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { OnchainKitProvider } from '@coinbase/onchainkit';
 import { coinbaseWallet, injected, metaMask } from 'wagmi/connectors';
 
-// 1. Configura Wagmi (Il connettore alla Blockchain)
+// NESSUN IMPORT DI STILE QUI
+
 const config = createConfig({
-  chains: [baseSepolia], // Usa Sepolia per lo sviluppo
+  chains: [baseSepolia],
   transports: {
     [baseSepolia.id]: http(),
   },
   connectors: [
-    metaMask(), // Supporto esplicito per MetaMask
-    injected(), // Supporto generico per wallet browser
     coinbaseWallet({
       appName: 'farchad',
       preference: 'smartWalletOnly', 
     }),
+    metaMask(),
+    injected(),
   ],
 });
 
 export function Providers({ children }: { children: ReactNode }) {
-  // Utilizziamo useState per garantire che QueryClient sia creato solo una volta lato client
   const [queryClient] = useState(() => new QueryClient());
 
   return (
@@ -36,6 +36,8 @@ export function Providers({ children }: { children: ReactNode }) {
           config={{
              appearance: { mode: "auto", theme: "base" },
           }}
+          // Se togliere lo stile rompe MiniKit, puoi provare a rimuovere 'miniKit' da qui
+          // Ma per ora lasciamolo per vedere se la build passa senza CSS.
           miniKit={{
             enabled: true,
             autoConnect: true,
