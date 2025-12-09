@@ -18,8 +18,7 @@ const THEME = {
   successBg: '#14532d',
   border: '#4c2f7a',
   opensea: '#2081e2',
-  share: '#10b981',
-  debugInput: '#4a044e'
+  share: '#10b981'
 };
 
 const CHAD_NFT_CONTRACT_ADDRESS = '0xA72449e2Bb68E7A331921586498739a56b9d4D25';
@@ -56,7 +55,9 @@ interface UserData {
 }
 
 export default function Home() {
-  const { user, connect: connectMiniKit } = useMiniKit();
+  // Hook MiniKit & Wagmi
+  // FIX: Aggiunto 'as any' per risolvere eventuali problemi di tipi con librerie non allineate
+  const { user, connect: connectMiniKit } = useMiniKit() as any;
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
   
@@ -180,7 +181,7 @@ export default function Home() {
 
   const isUserConnected = isConnected || !!user;
   
-  // *** DEFINIZIONE VARIABILE MANCANTE ***
+  // *** DEFINIZIONE VARIABILE AGGIUNTA QUI ***
   const displayImage = chadImage || userData?.pfpUrl || user?.pfpUrl || "https://placehold.co/400x400/2d1b4e/835fb3/png?text=?";
 
   return (
@@ -244,8 +245,9 @@ export default function Home() {
              <img src={displayImage} style={styles.previewImage} alt="Preview" />
            )}
            
+           {/* Mostra badge rarità */}
            {chadImage && traits.some(t => t.trait_type === 'Rarity' && (t.value === 'RARE' || t.value === 'LEGENDARY')) && (
-             <div style={styles.rarityBadge}>✨ RARE TRAIT!</div>
+             <div style={styles.rarityBadge}>✨ RARE TRAIT FOUND!</div>
            )}
         </div>
 
