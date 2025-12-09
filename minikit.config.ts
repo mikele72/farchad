@@ -5,12 +5,12 @@ import { baseSepolia } from 'wagmi/chains';
 
 export const minikitConfig = {
   miniapp: {
-    name: 'Farchad',
+    name: 'farchad',
     iconUrl: 'https://placehold.co/600x400/835fb3/ffffff/png?text=CHAD', 
   },
   chain: baseSepolia, 
   wallet: {
-    appName: 'Farchad',
+    appName: 'farchad',
     appLogoUrl: 'https://placehold.co/600x400/835fb3/ffffff/png?text=CHAD',
     chains: [baseSepolia],
   },
