@@ -3,10 +3,9 @@
 import React, { useCallback, useState, useEffect } from 'react';
 import { useMiniKit } from '@coinbase/onchainkit/minikit';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useConnect } from 'wagmi';
-import { baseSepolia } from 'wagmi/chains'; // Assicurati di usare Sepolia per i test
-import { minikitConfig } from '../minikit.config'; 
+import { baseSepolia } from 'wagmi/chains';
 
-// --- STILI E CONFIGURAZIONE ---
+// --- STILI ---
 const THEME = {
   primary: '#835fb3',
   primaryDark: '#6a4ca0',
@@ -18,7 +17,8 @@ const THEME = {
   successBg: '#14532d',
   border: '#4c2f7a',
   opensea: '#2081e2',
-  share: '#10b981'
+  share: '#10b981',
+  debugInput: '#4a044e'
 };
 
 const CHAD_NFT_CONTRACT_ADDRESS = '0xA72449e2Bb68E7A331921586498739a56b9d4D25';
@@ -55,9 +55,9 @@ interface UserData {
 }
 
 export default function Home() {
-  // FIX: Aggiunto 'as any' per risolvere l'errore di build su Vercel
-  const { user, connect: connectMiniKit } = useMiniKit() as any;
-  
+  // Hook MiniKit (Farcaster)
+  const { user, connect: connectMiniKit } = useMiniKit();
+  // Hook Wagmi (Standard)
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
   
@@ -71,7 +71,7 @@ export default function Home() {
   const [metadataUri, setMetadataUri] = useState<string | null>(null);
   const [traits, setTraits] = useState<any[]>([]);
   
-  // Stato per il FID manuale (Debug/Test)
+  // FID Manuale per test su PC
   const [manualFid, setManualFid] = useState<string>("");
 
   useEffect(() => {
@@ -86,18 +86,34 @@ export default function Home() {
   }, [mintError]);
 
   const handleConnect = useCallback(() => {
-    if (connectMiniKit) {
+    // 1. Logica Farcaster: Se siamo in un frame, usa MiniKit
+    const isFrame = typeof window !== 'undefined' && window.parent !== window;
+    
+    if (isFrame && connectMiniKit) {
       connectMiniKit();
+      return;
+    }
+
+    // 2. Logica Desktop: Cerca MetaMask o Coinbase
+    const metamask = connectors.find(c => c.name.toLowerCase().includes('metamask'));
+    const injected = connectors.find(c => c.id === 'injected');
+    const coinbase = connectors.find(c => c.id === 'coinbaseWalletSDK');
+
+    if (metamask) {
+        connect({ connector: metamask });
+    } else if (injected) {
+        connect({ connector: injected });
+    } else if (coinbase) {
+        connect({ connector: coinbase });
     } else {
-      const coinbaseConnector = connectors.find(c => c.id === 'coinbaseWalletSDK');
-      if (coinbaseConnector) connect({ connector: coinbaseConnector });
+        // Fallback
+        if (connectors.length > 0) connect({ connector: connectors[0] });
+        else alert("Nessun wallet trovato! Su PC installa MetaMask, su mobile usa Warpcast.");
     }
   }, [connectMiniKit, connectors, connect]);
 
   const handleCreateChad = async () => {
-    // USA IL FID MANUALE SE C'È, ALTRIMENTI QUELLO RILEVATO, ALTRIMENTI IL FALLBACK
     const effectiveFid = manualFid ? parseInt(manualFid) : (user?.fid || 999999);
-    
     const wallet = (user?.walletAddress || address) as `0x${string}`;
 
     if (!wallet) {
@@ -107,11 +123,10 @@ export default function Home() {
 
     setError(null);
     try {
-      // A. Recupero PFP
       setProcessState(ProcessState.FETCHING_PFP);
       let currentPfp = user?.pfpUrl;
       
-      // Se non abbiamo il PFP ma abbiamo un FID, lo chiediamo all'API
+      // Se non abbiamo il PFP, lo chiediamo all'API
       if (!currentPfp) {
           try {
             const res = await fetch(`/api/get-pfp?fid=${effectiveFid}`);
@@ -124,7 +139,6 @@ export default function Home() {
 
       setUserData({ address: wallet, fid: effectiveFid, pfpUrl: currentPfp, displayName: user?.username || `Fid-${effectiveFid}` });
 
-      // B. AI Transformation
       setProcessState(ProcessState.TRANSFORMING);
       const aiRes = await fetch('/api/transform', {
         method: 'POST',
@@ -138,7 +152,6 @@ export default function Home() {
       setChadImage(aiData.imageUrl);
       setTraits(aiData.attributes || []);
 
-      // C. Upload IPFS
       setProcessState(ProcessState.UPLOADING_IPFS);
       const ipfsRes = await fetch('/api/upload-to-ipfs', {
         method: 'POST',
@@ -177,8 +190,6 @@ export default function Home() {
   };
 
   const isUserConnected = isConnected || !!user;
-  
-  // *** DEFINIZIONE VARIABILE AGGIUNTA QUI ***
   const displayImage = chadImage || userData?.pfpUrl || user?.pfpUrl || "https://placehold.co/400x400/2d1b4e/835fb3/png?text=?";
 
   return (
@@ -192,7 +203,6 @@ export default function Home() {
       <div style={styles.mainCard}>
         {error && <div style={styles.errorBox}>⚠️ {error}</div>}
 
-        {/* BOX PROFILO */}
         {isUserConnected ? (
            <div style={styles.profileCard}>
              <div style={styles.profileHeader}>YOUR PROFILE</div>
@@ -209,19 +219,21 @@ export default function Home() {
                <div style={styles.checkIcon}>✓</div>
              </div>
 
-             {/* CAMPO DEBUG FID */}
-             <div style={{marginTop: '15px', borderTop: `1px solid ${THEME.border}`, paddingTop: '10px'}}>
-               <label style={{color: THEME.textSecondary, fontSize: '0.8rem', display: 'block', marginBottom: '5px'}}>
-                 TEST FID (Lascia vuoto per il tuo):
-               </label>
-               <input 
-                 type="number" 
-                 placeholder="Es. 22731" 
-                 value={manualFid}
-                 onChange={(e) => setManualFid(e.target.value)}
-                 style={styles.debugInput}
-               />
-             </div>
+             {/* CAMPO DEBUG FID (Visibile solo se non siamo su Farcaster) */}
+             {!user?.fid && (
+                 <div style={{marginTop: '15px', borderTop: `1px solid ${THEME.border}`, paddingTop: '10px'}}>
+                   <label style={{color: THEME.textSecondary, fontSize: '0.8rem', display: 'block', marginBottom: '5px'}}>
+                     TEST FID (Lascia vuoto per il tuo):
+                   </label>
+                   <input 
+                     type="number" 
+                     placeholder="Es. 22731" 
+                     value={manualFid}
+                     onChange={(e) => setManualFid(e.target.value)}
+                     style={styles.debugInput}
+                   />
+                 </div>
+             )}
            </div>
         ) : (
            <div style={{...styles.profileCard, opacity: 0.5}}>
@@ -243,7 +255,6 @@ export default function Home() {
              <img src={displayImage} style={styles.previewImage} alt="Preview" />
            )}
            
-           {/* Mostra badge rarità */}
            {chadImage && traits.some(t => t.trait_type === 'Rarity' && (t.value === 'RARE' || t.value === 'LEGENDARY')) && (
              <div style={styles.rarityBadge}>✨ RARE TRAIT FOUND!</div>
            )}

@@ -2,25 +2,24 @@
 
 import { ReactNode, useState } from 'react';
 import { WagmiProvider, createConfig, http } from 'wagmi';
-import { baseSepolia } from 'wagmi/chains'; // Usiamo Sepolia per il test
+import { baseSepolia } from 'wagmi/chains'; // Usa Sepolia per i test
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { OnchainKitProvider } from '@coinbase/onchainkit';
 import { coinbaseWallet, injected, metaMask } from 'wagmi/connectors';
 
-// NESSUN IMPORT DI STILE QUI
-
+// Configurazione Wagmi per Base Sepolia
 const config = createConfig({
   chains: [baseSepolia],
   transports: {
     [baseSepolia.id]: http(),
   },
   connectors: [
+    metaMask(),
+    injected(),
     coinbaseWallet({
       appName: 'farchad',
       preference: 'smartWalletOnly', 
     }),
-    metaMask(),
-    injected(),
   ],
 });
 
@@ -36,10 +35,8 @@ export function Providers({ children }: { children: ReactNode }) {
           config={{
              appearance: { mode: "auto", theme: "base" },
           }}
-          // Se togliere lo stile rompe MiniKit, puoi provare a rimuovere 'miniKit' da qui
-          // Ma per ora lasciamolo per vedere se la build passa senza CSS.
           miniKit={{
-            enabled: true,
+            enabled: true, // Questo è essenziale per Farcaster
             autoConnect: true,
           }}
         >
