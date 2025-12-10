@@ -4,7 +4,6 @@ import React, { useCallback, useState, useEffect } from 'react';
 import { useMiniKit } from '@coinbase/onchainkit/minikit';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useConnect } from 'wagmi';
 import { baseSepolia } from 'wagmi/chains';
-import { minikitConfig } from '../minikit.config'; 
 
 // --- STILI E CONFIGURAZIONE ---
 const THEME = {
@@ -56,7 +55,9 @@ interface UserData {
 }
 
 export default function Home() {
+  // FIX: 'as any' per evitare errori di build TypeScript su Vercel
   const { user, connect: connectMiniKit } = useMiniKit() as any;
+  
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
   
@@ -70,43 +71,17 @@ export default function Home() {
   const [metadataUri, setMetadataUri] = useState<string | null>(null);
   const [traits, setTraits] = useState<any[]>([]);
   
-  // Stato per il FID (Manuale o Rilevato dal Wallet)
-  const [detectedFid, setDetectedFid] = useState<number | null>(null);
+  // Stato per il FID manuale (Debug/Test)
   const [manualFid, setManualFid] = useState<string>("");
-  const [isSearchingFid, setIsSearchingFid] = useState(false);
+  
+  // Rileva se siamo dentro Farcaster (iframe)
+  const [isFarcasterFrame, setIsFarcasterFrame] = useState(false);
 
-  // --- NUOVO: Cerca FID quando il wallet si connette ---
   useEffect(() => {
-    const fetchFidFromAddress = async () => {
-        // Se siamo connessi col wallet ma NON abbiamo un utente MiniKit (es. siamo su desktop)
-        if (isConnected && address && !user?.fid) {
-            setIsSearchingFid(true);
-            try {
-                // Chiamata alla tua nuova API
-                const res = await fetch(`/api/get-fid?address=${address}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.fid) {
-                        setDetectedFid(data.fid);
-                        // Aggiorniamo subito l'interfaccia con i dati trovati
-                        setUserData({
-                            address: address,
-                            fid: data.fid,
-                            pfpUrl: data.pfpUrl || "https://placehold.co/400x400/png?text=NO+PFP",
-                            displayName: data.username
-                        });
-                    }
-                }
-            } catch (e) {
-                console.log("Nessun FID trovato per questo address", e);
-            } finally {
-                setIsSearchingFid(false);
-            }
-        }
-    };
-
-    fetchFidFromAddress();
-  }, [isConnected, address, user]);
+    if (typeof window !== 'undefined' && window.parent !== window) {
+      setIsFarcasterFrame(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (isTxSuccessful) setProcessState(ProcessState.MINT_SUCCESS);
@@ -120,17 +95,33 @@ export default function Home() {
   }, [mintError]);
 
   const handleConnect = useCallback(() => {
-    if (connectMiniKit) {
+    // 1. Logica Farcaster: Se siamo in un frame, usa MiniKit
+    if (isFarcasterFrame && connectMiniKit) {
       connectMiniKit();
-    } else {
-      const coinbaseConnector = connectors.find(c => c.id === 'coinbaseWalletSDK');
-      if (coinbaseConnector) connect({ connector: coinbaseConnector });
+      return;
     }
-  }, [connectMiniKit, connectors, connect]);
+
+    // 2. Logica Desktop: Cerca MetaMask o Coinbase
+    const metamask = connectors.find(c => c.name.toLowerCase().includes('metamask'));
+    const injected = connectors.find(c => c.id === 'injected');
+    const coinbase = connectors.find(c => c.id === 'coinbaseWalletSDK');
+
+    if (metamask) {
+        connect({ connector: metamask });
+    } else if (injected) {
+        connect({ connector: injected });
+    } else if (coinbase) {
+        connect({ connector: coinbase });
+    } else {
+        // Fallback
+        if (connectors.length > 0) connect({ connector: connectors[0] });
+        else alert("Nessun wallet trovato! Su PC installa MetaMask, su mobile usa Warpcast.");
+    }
+  }, [connectMiniKit, connectors, connect, isFarcasterFrame]);
 
   const handleCreateChad = async () => {
     // Ordine di priorità: Manuale > Rilevato da Wallet > MiniKit > Fallback
-    const effectiveFid = manualFid ? parseInt(manualFid) : (detectedFid || user?.fid || 999999);
+    const effectiveFid = manualFid ? parseInt(manualFid) : (user?.fid || 999999);
     
     const wallet = (user?.walletAddress || address) as `0x${string}`;
 
@@ -143,9 +134,7 @@ export default function Home() {
     try {
       // A. Recupero PFP
       setProcessState(ProcessState.FETCHING_PFP);
-      
-      // Se abbiamo già i dati (dal useEffect sopra), usiamoli
-      let currentPfp = userData?.pfpUrl || user?.pfpUrl;
+      let currentPfp = user?.pfpUrl;
       
       // Se non abbiamo il PFP, lo chiediamo all'API
       if (!currentPfp) {
@@ -158,7 +147,7 @@ export default function Home() {
       
       if (!currentPfp) currentPfp = "https://placehold.co/400x400/png?text=NO+PFP";
 
-      setUserData({ address: wallet, fid: effectiveFid, pfpUrl: currentPfp, displayName: userData?.displayName || user?.username || `Fid-${effectiveFid}` });
+      setUserData({ address: wallet, fid: effectiveFid, pfpUrl: currentPfp, displayName: user?.username || `Fid-${effectiveFid}` });
 
       // B. AI Transformation
       setProcessState(ProcessState.TRANSFORMING);
@@ -213,6 +202,8 @@ export default function Home() {
   };
 
   const isUserConnected = isConnected || !!user;
+  
+  // *** DEFINIZIONE VARIABILE ***
   const displayImage = chadImage || userData?.pfpUrl || user?.pfpUrl || "https://placehold.co/400x400/2d1b4e/835fb3/png?text=?";
 
   return (
@@ -236,29 +227,27 @@ export default function Home() {
                  alt="Profile"
                />
                <div style={styles.profileInfo}>
-                 <div style={styles.username}>
-                    @{userData?.displayName || user?.username || "User"}
-                 </div>
-                 <div style={styles.statusText}>
-                    {isSearchingFid ? "Searching Farcaster ID..." : `Connected (FID: ${userData?.fid || user?.fid || '?'})`}
-                 </div>
+                 <div style={styles.username}>@{userData?.displayName || user?.username || "User"}</div>
+                 <div style={styles.statusText}>Connected</div>
                </div>
                <div style={styles.checkIcon}>✓</div>
              </div>
 
-             {/* CAMPO DEBUG FID */}
-             <div style={{marginTop: '15px', borderTop: `1px solid ${THEME.border}`, paddingTop: '10px'}}>
-               <label style={{color: THEME.textSecondary, fontSize: '0.8rem', display: 'block', marginBottom: '5px'}}>
-                 TEST FID (Override):
-               </label>
-               <input 
-                 type="number" 
-                 placeholder={detectedFid ? `Detected: ${detectedFid}` : "Insert FID manually"}
-                 value={manualFid}
-                 onChange={(e) => setManualFid(e.target.value)}
-                 style={styles.debugInput}
-               />
-             </div>
+             {/* CAMPO DEBUG FID: Visibile solo se non siamo su Farcaster nativo */}
+             {!user?.fid && (
+                 <div style={{marginTop: '15px', borderTop: `1px solid ${THEME.border}`, paddingTop: '10px'}}>
+                   <label style={{color: THEME.textSecondary, fontSize: '0.8rem', display: 'block', marginBottom: '5px'}}>
+                     TEST FID (Lascia vuoto per il tuo):
+                   </label>
+                   <input 
+                     type="number" 
+                     placeholder="Es. 22731" 
+                     value={manualFid}
+                     onChange={(e) => setManualFid(e.target.value)}
+                     style={styles.debugInput}
+                   />
+                 </div>
+             )}
            </div>
         ) : (
            <div style={{...styles.profileCard, opacity: 0.5}}>
@@ -288,7 +277,9 @@ export default function Home() {
 
         <div style={styles.actionsArea}>
           {!isUserConnected ? (
-            <button onClick={() => handleConnect()} style={styles.primaryButton}>CONNECT WALLET</button>
+             <button onClick={handleConnect} style={styles.primaryButton}>
+                {isFarcasterFrame ? "LOGIN WITH FARCASTER" : "CONNECT WALLET"}
+             </button>
           ) : processState === ProcessState.INITIAL ? (
             <button onClick={handleCreateChad} style={styles.primaryButton}>CREATE CHAD AI</button>
           ) : processState === ProcessState.MINT_READY ? (
