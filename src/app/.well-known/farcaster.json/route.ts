@@ -8,17 +8,24 @@ export async function GET() {
     "payload": "eyJkb21haW4iOiJmYXJjaGFkLnZlcmNlbC5hcHAifQ",
     "signature": "EWU/tKJu3EIwEnTkA+zFa4OBBhj+iwVFXY1p3sICWahExfgedmw8/nPIG/9i2yIEauvMjqE529XJ/2lPRKrl4xw="
   },
-    frame: {
-      version: "1",
-      name: "Farchad",
-      iconUrl: "https://placehold.co/600x400/835fb3/ffffff/png?text=FARCHAD",
-      homeUrl: "https://farchad.vercel.app", // Assicurati che questo sia il tuo URL Vercel corretto
-      imageUrl: "https://placehold.co/600x400/835fb3/ffffff/png?text=FARCHAD",
-      buttonTitle: "Launch App",
-      splashImageUrl: "https://placehold.co/600x400/835fb3/ffffff/png?text=FARCHAD",
-      splashBackgroundColor: "#1a1025",
-      webhookUrl: "https://farchad.vercel.app/api/webhook"
-    }
+ "frame": {
+    "name": "Farchad",
+    "version": "1",
+    "iconUrl": "https://farchad.vercel.app/icon.png",
+    "homeUrl": "https://farchad.vercel.app",
+    "imageUrl": "https://farchad.vercel.app/image.png",
+    "splashImageUrl": "https://farchad.vercel.app/splash.png",
+    "splashBackgroundColor": "#1a1025",
+    "webhookUrl": "https://farchad.vercel.app/api/webhook",
+    "subtitle": "Mint and Share",
+    "description": "Turn your Farcaster PFP into a Chad",
+    "primaryCategory": "art-creativity",
+    "tags": [
+      "nft",
+      "art"
+    ],
+    "ogTitle": "Transform your PFP into a Chad"
+  },
   };
 
   return NextResponse.json(config);
