@@ -4,7 +4,6 @@ import React, { useCallback, useState, useEffect } from 'react';
 import { useMiniKit } from '@coinbase/onchainkit/minikit';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useConnect } from 'wagmi';
 import { baseSepolia } from 'wagmi/chains';
-// Assicurati che il percorso di minikit.config sia corretto (es: ../minikit.config o ./minikit.config)
 import { minikitConfig } from '../minikit.config'; 
 
 // --- STILI E CONFIGURAZIONE ---
@@ -19,7 +18,8 @@ const THEME = {
   successBg: '#14532d',
   border: '#4c2f7a',
   opensea: '#2081e2',
-  share: '#10b981'
+  share: '#10b981',
+  debugInput: '#4a044e'
 };
 
 const CHAD_NFT_CONTRACT_ADDRESS = '0xA72449e2Bb68E7A331921586498739a56b9d4D25';
@@ -56,9 +56,7 @@ interface UserData {
 }
 
 export default function Home() {
-  // FIX: 'as any' per evitare errori di build TypeScript su Vercel
   const { user, connect: connectMiniKit } = useMiniKit() as any;
-  
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
   
@@ -72,8 +70,43 @@ export default function Home() {
   const [metadataUri, setMetadataUri] = useState<string | null>(null);
   const [traits, setTraits] = useState<any[]>([]);
   
-  // Stato per il FID manuale (Debug/Test)
+  // Stato per il FID (Manuale o Rilevato dal Wallet)
+  const [detectedFid, setDetectedFid] = useState<number | null>(null);
   const [manualFid, setManualFid] = useState<string>("");
+  const [isSearchingFid, setIsSearchingFid] = useState(false);
+
+  // --- NUOVO: Cerca FID quando il wallet si connette ---
+  useEffect(() => {
+    const fetchFidFromAddress = async () => {
+        // Se siamo connessi col wallet ma NON abbiamo un utente MiniKit (es. siamo su desktop)
+        if (isConnected && address && !user?.fid) {
+            setIsSearchingFid(true);
+            try {
+                // Chiamata alla tua nuova API
+                const res = await fetch(`/api/get-fid?address=${address}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.fid) {
+                        setDetectedFid(data.fid);
+                        // Aggiorniamo subito l'interfaccia con i dati trovati
+                        setUserData({
+                            address: address,
+                            fid: data.fid,
+                            pfpUrl: data.pfpUrl || "https://placehold.co/400x400/png?text=NO+PFP",
+                            displayName: data.username
+                        });
+                    }
+                }
+            } catch (e) {
+                console.log("Nessun FID trovato per questo address", e);
+            } finally {
+                setIsSearchingFid(false);
+            }
+        }
+    };
+
+    fetchFidFromAddress();
+  }, [isConnected, address, user]);
 
   useEffect(() => {
     if (isTxSuccessful) setProcessState(ProcessState.MINT_SUCCESS);
@@ -96,8 +129,8 @@ export default function Home() {
   }, [connectMiniKit, connectors, connect]);
 
   const handleCreateChad = async () => {
-    // USA IL FID MANUALE SE C'È, ALTRIMENTI QUELLO RILEVATO, ALTRIMENTI IL FALLBACK
-    const effectiveFid = manualFid ? parseInt(manualFid) : (user?.fid || 999999);
+    // Ordine di priorità: Manuale > Rilevato da Wallet > MiniKit > Fallback
+    const effectiveFid = manualFid ? parseInt(manualFid) : (detectedFid || user?.fid || 999999);
     
     const wallet = (user?.walletAddress || address) as `0x${string}`;
 
@@ -110,9 +143,11 @@ export default function Home() {
     try {
       // A. Recupero PFP
       setProcessState(ProcessState.FETCHING_PFP);
-      let currentPfp = user?.pfpUrl;
       
-      // Se non abbiamo il PFP ma abbiamo un FID, lo chiediamo all'API
+      // Se abbiamo già i dati (dal useEffect sopra), usiamoli
+      let currentPfp = userData?.pfpUrl || user?.pfpUrl;
+      
+      // Se non abbiamo il PFP, lo chiediamo all'API
       if (!currentPfp) {
           try {
             const res = await fetch(`/api/get-pfp?fid=${effectiveFid}`);
@@ -123,17 +158,14 @@ export default function Home() {
       
       if (!currentPfp) currentPfp = "https://placehold.co/400x400/png?text=NO+PFP";
 
-      setUserData({ address: wallet, fid: effectiveFid, pfpUrl: currentPfp, displayName: user?.username || `Fid-${effectiveFid}` });
+      setUserData({ address: wallet, fid: effectiveFid, pfpUrl: currentPfp, displayName: userData?.displayName || user?.username || `Fid-${effectiveFid}` });
 
       // B. AI Transformation
       setProcessState(ProcessState.TRANSFORMING);
       const aiRes = await fetch('/api/transform', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            pfpUrl: currentPfp,
-            fid: effectiveFid 
-        })
+        body: JSON.stringify({ pfpUrl: currentPfp, fid: effectiveFid })
       });
       const aiData = await aiRes.json();
       
@@ -181,8 +213,6 @@ export default function Home() {
   };
 
   const isUserConnected = isConnected || !!user;
-  
-  // *** QUESTA E' LA VARIABILE CHE MANCAVA ***
   const displayImage = chadImage || userData?.pfpUrl || user?.pfpUrl || "https://placehold.co/400x400/2d1b4e/835fb3/png?text=?";
 
   return (
@@ -196,7 +226,6 @@ export default function Home() {
       <div style={styles.mainCard}>
         {error && <div style={styles.errorBox}>⚠️ {error}</div>}
 
-        {/* BOX PROFILO */}
         {isUserConnected ? (
            <div style={styles.profileCard}>
              <div style={styles.profileHeader}>YOUR PROFILE</div>
@@ -207,8 +236,12 @@ export default function Home() {
                  alt="Profile"
                />
                <div style={styles.profileInfo}>
-                 <div style={styles.username}>@{userData?.displayName || user?.username || "User"}</div>
-                 <div style={styles.statusText}>Connected</div>
+                 <div style={styles.username}>
+                    @{userData?.displayName || user?.username || "User"}
+                 </div>
+                 <div style={styles.statusText}>
+                    {isSearchingFid ? "Searching Farcaster ID..." : `Connected (FID: ${userData?.fid || user?.fid || '?'})`}
+                 </div>
                </div>
                <div style={styles.checkIcon}>✓</div>
              </div>
@@ -216,11 +249,11 @@ export default function Home() {
              {/* CAMPO DEBUG FID */}
              <div style={{marginTop: '15px', borderTop: `1px solid ${THEME.border}`, paddingTop: '10px'}}>
                <label style={{color: THEME.textSecondary, fontSize: '0.8rem', display: 'block', marginBottom: '5px'}}>
-                 TEST FID (Lascia vuoto per il tuo):
+                 TEST FID (Override):
                </label>
                <input 
                  type="number" 
-                 placeholder="Es. 22731" 
+                 placeholder={detectedFid ? `Detected: ${detectedFid}` : "Insert FID manually"}
                  value={manualFid}
                  onChange={(e) => setManualFid(e.target.value)}
                  style={styles.debugInput}
