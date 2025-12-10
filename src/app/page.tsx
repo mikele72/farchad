@@ -4,6 +4,8 @@ import React, { useCallback, useState, useEffect } from 'react';
 import { useMiniKit } from '@coinbase/onchainkit/minikit';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useConnect } from 'wagmi';
 import { baseSepolia } from 'wagmi/chains';
+// Assicurati che il percorso di minikit.config sia corretto (es: ../minikit.config o ./minikit.config)
+import { minikitConfig } from '../minikit.config'; 
 
 // --- STILI E CONFIGURAZIONE ---
 const THEME = {
@@ -94,6 +96,7 @@ export default function Home() {
   }, [connectMiniKit, connectors, connect]);
 
   const handleCreateChad = async () => {
+    // USA IL FID MANUALE SE C'È, ALTRIMENTI QUELLO RILEVATO, ALTRIMENTI IL FALLBACK
     const effectiveFid = manualFid ? parseInt(manualFid) : (user?.fid || 999999);
     
     const wallet = (user?.walletAddress || address) as `0x${string}`;
@@ -105,9 +108,11 @@ export default function Home() {
 
     setError(null);
     try {
+      // A. Recupero PFP
       setProcessState(ProcessState.FETCHING_PFP);
       let currentPfp = user?.pfpUrl;
       
+      // Se non abbiamo il PFP ma abbiamo un FID, lo chiediamo all'API
       if (!currentPfp) {
           try {
             const res = await fetch(`/api/get-pfp?fid=${effectiveFid}`);
@@ -120,11 +125,15 @@ export default function Home() {
 
       setUserData({ address: wallet, fid: effectiveFid, pfpUrl: currentPfp, displayName: user?.username || `Fid-${effectiveFid}` });
 
+      // B. AI Transformation
       setProcessState(ProcessState.TRANSFORMING);
       const aiRes = await fetch('/api/transform', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pfpUrl: currentPfp, fid: effectiveFid })
+        body: JSON.stringify({ 
+            pfpUrl: currentPfp,
+            fid: effectiveFid 
+        })
       });
       const aiData = await aiRes.json();
       
@@ -133,6 +142,7 @@ export default function Home() {
       setChadImage(aiData.imageUrl);
       setTraits(aiData.attributes || []);
 
+      // C. Upload IPFS
       setProcessState(ProcessState.UPLOADING_IPFS);
       const ipfsRes = await fetch('/api/upload-to-ipfs', {
         method: 'POST',
@@ -172,7 +182,7 @@ export default function Home() {
 
   const isUserConnected = isConnected || !!user;
   
-  // *** DEFINIZIONE VARIABILE ***
+  // *** QUESTA E' LA VARIABILE CHE MANCAVA ***
   const displayImage = chadImage || userData?.pfpUrl || user?.pfpUrl || "https://placehold.co/400x400/2d1b4e/835fb3/png?text=?";
 
   return (
@@ -186,6 +196,7 @@ export default function Home() {
       <div style={styles.mainCard}>
         {error && <div style={styles.errorBox}>⚠️ {error}</div>}
 
+        {/* BOX PROFILO */}
         {isUserConnected ? (
            <div style={styles.profileCard}>
              <div style={styles.profileHeader}>YOUR PROFILE</div>
@@ -202,6 +213,7 @@ export default function Home() {
                <div style={styles.checkIcon}>✓</div>
              </div>
 
+             {/* CAMPO DEBUG FID */}
              <div style={{marginTop: '15px', borderTop: `1px solid ${THEME.border}`, paddingTop: '10px'}}>
                <label style={{color: THEME.textSecondary, fontSize: '0.8rem', display: 'block', marginBottom: '5px'}}>
                  TEST FID (Lascia vuoto per il tuo):
@@ -235,6 +247,7 @@ export default function Home() {
              <img src={displayImage} style={styles.previewImage} alt="Preview" />
            )}
            
+           {/* Mostra badge rarità */}
            {chadImage && traits.some(t => t.trait_type === 'Rarity' && (t.value === 'RARE' || t.value === 'LEGENDARY')) && (
              <div style={styles.rarityBadge}>✨ RARE TRAIT FOUND!</div>
            )}
