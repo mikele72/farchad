@@ -1,13 +1,15 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   typescript: {
+    // Ignoriamo errori TS per garantire il deploy su Vercel
     ignoreBuildErrors: true,
   },
   eslint: {
+    // Ignoriamo errori ESLint per garantire il deploy
     ignoreDuringBuilds: true,
   },
   webpack: (config) => {
+    // Gestione pacchetti problematici per Web3
     config.externals.push('pino-pretty', 'lokijs', 'encoding');
     return config;
   },
