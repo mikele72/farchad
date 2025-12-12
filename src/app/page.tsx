@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useState, useEffect } from 'react';
-import { useMiniKit } from '@coinbase/onchainkit/minikit';
+import { useMiniKit } from '@coinbase/onchainkit/frame';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useConnect } from 'wagmi';
 import { baseSepolia } from 'wagmi/chains';
 import { minikitConfig } from '../minikit.config'; 
