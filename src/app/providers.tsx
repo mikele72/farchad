@@ -10,18 +10,22 @@ import { coinbaseWallet, injected, metaMask } from 'wagmi/connectors';
 // Configurazione Wagmi per Base Sepolia
 const config = createConfig({
   chains: [baseSepolia],
-  transports: {
-    [baseSepolia.id]: http(),
-  },
+  transports: { [baseSepolia.id]: http() },
   connectors: [
-    metaMask(),
+    metaMask({
+      dappMetadata: {
+        name: 'Farchad',
+        url: 'https://farchad.vercel.app',
+        iconUrl: 'https://farchad.vercel.app/icon.png',
+      },
+    }),
     injected(),
     coinbaseWallet({
       appName: 'farchad',
-      preference: 'smartWalletOnly', 
+      preference: 'smartWalletOnly',
     }),
   ],
-});
+})
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());

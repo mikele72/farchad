@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useCallback, useState, useEffect } from 'react';
-// Rimosso useMiniKit per sbloccare il deploy su Vercel
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useConnect } from 'wagmi';
 import { baseSepolia } from 'wagmi/chains';
 
@@ -18,7 +17,7 @@ const THEME = {
   border: '#4c2f7a',
   opensea: '#2081e2',
   share: '#10b981',
-  debugInput: '#4a044e'
+  debugInput: '#4a044e',
 };
 
 const CHAD_NFT_CONTRACT_ADDRESS = '0xA72449e2Bb68E7A331921586498739a56b9d4D25';
@@ -26,19 +25,20 @@ const CHAD_NFT_CONTRACT_ADDRESS = '0xA72449e2Bb68E7A331921586498739a56b9d4D25';
 const CHAD_NFT_ABI = [
   {
     inputs: [
-      { internalType: "address", name: "to", type: "address" },
-      { internalType: "string", name: "uri", type: "string" },
-      { internalType: "uint256", name: "fid", type: "uint256" },
+      { internalType: 'address', name: 'to', type: 'address' },
+      { internalType: 'string', name: 'uri', type: 'string' },
+      { internalType: 'uint256', name: 'fid', type: 'uint256' },
     ],
-    name: "safeMint",
+    name: 'safeMint',
     outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
+    stateMutability: 'nonpayable',
+    type: 'function',
   },
 ] as const;
 
 enum ProcessState {
   INITIAL = 'INITIAL',
+  FETCHING_FID = 'FETCHING_FID',
   FETCHING_PFP = 'FETCHING_PFP',
   TRANSFORMING = 'TRANSFORMING',
   UPLOADING_IPFS = 'UPLOADING_IPFS',
@@ -55,22 +55,22 @@ interface UserData {
 }
 
 export default function Home() {
-  // Usiamo solo Wagmi per ora per garantire il deploy
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
-  
+
   const { data: hash, writeContract, error: mintError } = useWriteContract();
   const { isLoading: isConfirming, isSuccess: isTxSuccessful } = useWaitForTransactionReceipt({ hash });
 
   const [processState, setProcessState] = useState<ProcessState>(ProcessState.INITIAL);
   const [error, setError] = useState<string | null>(null);
+
+  const [fid, setFid] = useState<number | null>(null);
+  const [fidLoading, setFidLoading] = useState(false);
+
   const [userData, setUserData] = useState<UserData | null>(null);
   const [chadImage, setChadImage] = useState<string | null>(null);
   const [metadataUri, setMetadataUri] = useState<string | null>(null);
   const [traits, setTraits] = useState<any[]>([]);
-  
-  // FID Manuale per test
-  const [manualFid, setManualFid] = useState<string>("");
 
   useEffect(() => {
     if (isTxSuccessful) setProcessState(ProcessState.MINT_SUCCESS);
@@ -78,66 +78,119 @@ export default function Home() {
 
   useEffect(() => {
     if (mintError) {
-        setError(`Errore Mint: ${mintError.message.substring(0, 50)}...`);
-        setProcessState(ProcessState.MINT_READY);
+      setError(`Errore Mint: ${mintError.message.substring(0, 80)}...`);
+      setProcessState(ProcessState.MINT_READY);
     }
   }, [mintError]);
 
-  const handleConnect = useCallback(() => {
-    // Logica di connessione standard Wagmi
-    const coinbaseConnector = connectors.find(c => c.id === 'coinbaseWalletSDK');
-    const metamaskConnector = connectors.find(c => c.name.toLowerCase().includes('metamask'));
-    const injectedConnector = connectors.find(c => c.id === 'injected');
+  // --- AUTO: fetch FID dall'indirizzo wallet ---
+  useEffect(() => {
+    const run = async () => {
+      if (!address || !isConnected) {
+        setFid(null);
+        setUserData(null);
+        return;
+      }
 
-    if (coinbaseConnector) {
-        connect({ connector: coinbaseConnector });
-    } else if (metamaskConnector) {
-        connect({ connector: metamaskConnector });
-    } else if (injectedConnector) {
-        connect({ connector: injectedConnector });
-    } else {
-        if (connectors.length > 0) connect({ connector: connectors[0] });
-        else alert("Nessun wallet trovato.");
+      setError(null);
+      setFidLoading(true);
+      setProcessState(ProcessState.FETCHING_FID);
+
+      try {
+        const res = await fetch(`/api/get-fid?address=${address}`);
+        const data = await res.json();
+
+        const foundFid = typeof data?.fid === 'number' ? data.fid : null
+        setFid(foundFid)
+
+        if (!foundFid) {
+          setError("couldn't find a farcaster fid for this wallet")
+          setProcessState(ProcessState.INITIAL)
+          return
+        }
+
+        setUserData({
+          address: address as `0x${string}`,
+          fid: foundFid,
+          pfpUrl: data?.pfpUrl || 'https://placehold.co/50x50/png',
+          displayName: data?.username ? `@${data.username}` : `fid-${foundFid}`,
+        })
+
+
+        setProcessState(ProcessState.INITIAL);
+      } catch (e: any) {
+        setFid(null);
+        setUserData(null);
+        setError('failed to fetch fid from wallet');
+        setProcessState(ProcessState.INITIAL);
+      } finally {
+        setFidLoading(false);
+      }
+    };
+
+    run();
+  }, [address, isConnected]);
+
+  const handleConnect = useCallback(() => {
+    const coinbaseConnector = connectors.find((c) => c.id === 'coinbaseWalletSDK');
+    const metamaskConnector = connectors.find((c) => c.name.toLowerCase().includes('metamask'));
+    const injectedConnector = connectors.find((c) => c.id === 'injected');
+
+    if (coinbaseConnector) connect({ connector: coinbaseConnector });
+    else if (metamaskConnector) connect({ connector: metamaskConnector });
+    else if (injectedConnector) connect({ connector: injectedConnector });
+    else {
+      if (connectors.length > 0) connect({ connector: connectors[0] });
+      else alert('Nessun wallet trovato.');
     }
   }, [connectors, connect]);
 
   const handleCreateChad = async () => {
-    // Usa il FID manuale se inserito, altrimenti un fallback
-    const effectiveFid = manualFid ? parseInt(manualFid) : 999999;
     const wallet = address as `0x${string}`;
 
     if (!wallet) {
-        setError("Collega il wallet per iniziare!");
-        return;
+      setError('collega il wallet per iniziare');
+      return;
+    }
+    if (!fid) {
+      setError("couldn't find your farcaster id for this wallet");
+      return;
     }
 
     setError(null);
+
     try {
       // A. Recupero PFP
       setProcessState(ProcessState.FETCHING_PFP);
-      let currentPfp = null;
-      
-      try {
-        const res = await fetch(`/api/get-pfp?fid=${effectiveFid}`);
-        const data = await res.json();
-        if (data.pfpUrl) currentPfp = data.pfpUrl;
-      } catch (e) { console.log('Errore PFP API', e)}
-      
-      if (!currentPfp) currentPfp = "https://placehold.co/400x400/png?text=NO+PFP";
+      let currentPfp: string | null = null;
 
-      setUserData({ address: wallet, fid: effectiveFid, pfpUrl: currentPfp, displayName: `Fid-${effectiveFid}` });
+      try {
+        const res = await fetch(`/api/get-pfp?fid=${fid}`);
+        const data = await res.json();
+        if (data?.pfpUrl) currentPfp = data.pfpUrl;
+      } catch (e) {
+        console.log('Errore PFP API', e);
+      }
+
+      if (!currentPfp) currentPfp = 'https://placehold.co/400x400/png?text=NO+PFP';
+
+      setUserData({
+        address: wallet,
+        fid,
+        pfpUrl: currentPfp,
+        displayName: `fid-${fid}`,
+      });
 
       // B. AI Transformation
       setProcessState(ProcessState.TRANSFORMING);
       const aiRes = await fetch('/api/transform', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pfpUrl: currentPfp, fid: effectiveFid })
+        body: JSON.stringify({ pfpUrl: currentPfp, fid }),
       });
       const aiData = await aiRes.json();
-      
-      if (!aiData.imageUrl) throw new Error("Errore generazione AI");
-      
+      if (!aiData?.imageUrl) throw new Error('Errore generazione AI');
+
       setChadImage(aiData.imageUrl);
       setTraits(aiData.attributes || []);
 
@@ -146,43 +199,45 @@ export default function Home() {
       const ipfsRes = await fetch('/api/upload-to-ipfs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            imageUrl: aiData.imageUrl, 
-            name: `Chad #${effectiveFid}`, 
-            description: "Generated by Farchad App", 
-            fid: effectiveFid,
-            attributes: aiData.attributes 
-        })
+        body: JSON.stringify({
+          imageUrl: aiData.imageUrl,
+          name: `Chad #${fid}`,
+          description: 'Generated by Farchad App',
+          fid,
+          attributes: aiData.attributes,
+        }),
       });
       const ipfsData = await ipfsRes.json();
-      if (!ipfsData.metadataUri) throw new Error("Errore IPFS");
+      if (!ipfsData?.metadataUri) throw new Error('Errore IPFS');
 
       setMetadataUri(ipfsData.metadataUri);
       setProcessState(ProcessState.MINT_READY);
-
     } catch (e: any) {
-      setError(e.message || "Errore sconosciuto");
+      setError(e?.message || 'Errore sconosciuto');
       setProcessState(ProcessState.INITIAL);
     }
   };
 
   const handleMint = () => {
     if (!metadataUri || !userData) return;
+
     setProcessState(ProcessState.MINTING);
-    
+
     writeContract({
       address: CHAD_NFT_CONTRACT_ADDRESS as `0x${string}`,
       abi: CHAD_NFT_ABI,
       functionName: 'safeMint',
       args: [userData.address, metadataUri, BigInt(userData.fid)],
-      chainId: baseSepolia.id, 
+      chainId: baseSepolia.id,
     });
   };
 
   const isUserConnected = isConnected;
-  
-  // Variabile per l'immagine da mostrare
-  const displayImage = chadImage || userData?.pfpUrl || "https://placehold.co/400x400/2d1b4e/835fb3/png?text=?";
+
+  const displayImage =
+    chadImage || userData?.pfpUrl || 'https://placehold.co/400x400/2d1b4e/835fb3/png?text=?';
+
+  const createDisabled = fidLoading || !fid;
 
   return (
     <div style={styles.container}>
@@ -196,77 +251,103 @@ export default function Home() {
         {error && <div style={styles.errorBox}>⚠️ {error}</div>}
 
         {isUserConnected ? (
-           <div style={styles.profileCard}>
-             <div style={styles.profileHeader}>YOUR PROFILE</div>
-             <div style={styles.profileContent}>
-               <img 
-                 src={userData?.pfpUrl || "https://placehold.co/50x50/png"} 
-                 style={styles.profileImage} 
-                 alt="Profile"
-               />
-               <div style={styles.profileInfo}>
-                 <div style={styles.username}>
-                    {userData?.displayName || (address ? `${address.slice(0,6)}...` : "User")}
-                 </div>
-                 <div style={styles.statusText}>Connected</div>
-               </div>
-               <div style={styles.checkIcon}>✓</div>
-             </div>
-
-             {/* CAMPO DEBUG FID */}
-             <div style={{marginTop: '15px', borderTop: `1px solid ${THEME.border}`, paddingTop: '10px'}}>
-               <label style={{color: THEME.textSecondary, fontSize: '0.8rem', display: 'block', marginBottom: '5px'}}>
-                 TEST FID (Inserisci FID per test):
-               </label>
-               <input 
-                 type="number" 
-                 placeholder="Es. 22731" 
-                 value={manualFid}
-                 onChange={(e) => setManualFid(e.target.value)}
-                 style={styles.debugInput}
-               />
-             </div>
-           </div>
+          <div style={styles.profileCard}>
+            <div style={styles.profileHeader}>YOUR PROFILE</div>
+            <div style={styles.profileContent}>
+              <img
+                src={userData?.pfpUrl || 'https://placehold.co/50x50/png'}
+                style={styles.profileImage}
+                alt="Profile"
+              />
+              <div style={styles.profileInfo}>
+                <div style={styles.username}>
+                  {fid ? `fid-${fid}` : address ? `${address.slice(0, 6)}...` : 'User'}
+                </div>
+                <div style={styles.statusText}>
+                  {fidLoading ? 'detecting farcaster id...' : fid ? 'connected' : 'connected (no fid)'}
+                </div>
+              </div>
+              <div style={styles.checkIcon}>✓</div>
+            </div>
+          </div>
         ) : (
-           <div style={{...styles.profileCard, opacity: 0.5}}>
-             <div style={styles.profileHeader}>YOUR PROFILE</div>
-             <div style={{padding:'15px', textAlign:'center', color: THEME.textSecondary}}>Connect wallet to start</div>
-           </div>
+          <div style={{ ...styles.profileCard, opacity: 0.5 }}>
+            <div style={styles.profileHeader}>YOUR PROFILE</div>
+            <div style={{ padding: '15px', textAlign: 'center', color: THEME.textSecondary }}>
+              Connect wallet to start
+            </div>
+          </div>
         )}
 
         <div style={styles.previewContainer}>
-           {(processState === ProcessState.TRANSFORMING || processState === ProcessState.UPLOADING_IPFS || processState === ProcessState.FETCHING_PFP) ? (
-              <div style={styles.placeholderBox}>
-                  <div style={styles.loadingText}>
-                    {processState === ProcessState.FETCHING_PFP && "GETTING PFP..."}
-                    {processState === ProcessState.TRANSFORMING && "GENERATING CHAD AI..."}
-                    {processState === ProcessState.UPLOADING_IPFS && "SAVING TO IPFS..."}
-                  </div>
+          {processState === ProcessState.TRANSFORMING ||
+          processState === ProcessState.UPLOADING_IPFS ||
+          processState === ProcessState.FETCHING_PFP ||
+          processState === ProcessState.FETCHING_FID ? (
+            <div style={styles.placeholderBox}>
+              <div style={styles.loadingText}>
+                {processState === ProcessState.FETCHING_FID && 'GETTING FID...'}
+                {processState === ProcessState.FETCHING_PFP && 'GETTING PFP...'}
+                {processState === ProcessState.TRANSFORMING && 'GENERATING CHAD AI...'}
+                {processState === ProcessState.UPLOADING_IPFS && 'SAVING TO IPFS...'}
               </div>
-           ) : (
-             <img src={displayImage} style={styles.previewImage} alt="Preview" />
-           )}
-           
-           {/* Mostra badge rarità */}
-           {chadImage && traits.some(t => t.trait_type === 'Rarity' && (t.value === 'RARE' || t.value === 'LEGENDARY')) && (
-             <div style={styles.rarityBadge}>✨ RARE TRAIT FOUND!</div>
-           )}
+            </div>
+          ) : (
+            <img src={displayImage} style={styles.previewImage} alt="Preview" />
+          )}
+
+          {chadImage &&
+            traits.some((t) => t.trait_type === 'Rarity' && (t.value === 'RARE' || t.value === 'LEGENDARY')) && (
+              <div style={styles.rarityBadge}>✨ RARE TRAIT FOUND!</div>
+            )}
         </div>
 
         <div style={styles.actionsArea}>
           {!isUserConnected ? (
-            <button onClick={handleConnect} style={styles.primaryButton}>CONNECT WALLET</button>
+            <button onClick={handleConnect} style={styles.primaryButton}>
+              CONNECT WALLET
+            </button>
           ) : processState === ProcessState.INITIAL ? (
-            <button onClick={handleCreateChad} style={styles.primaryButton}>CREATE CHAD AI</button>
+            <button
+              onClick={handleCreateChad}
+              disabled={createDisabled}
+              style={{ ...styles.primaryButton, opacity: createDisabled ? 0.6 : 1 }}
+            >
+              {fidLoading ? 'LOADING...' : !fid ? 'NO FID FOUND' : 'CREATE CHAD AI'}
+            </button>
           ) : processState === ProcessState.MINT_READY ? (
-            <button onClick={handleMint} style={styles.primaryButton}>MINT NFT NOW</button>
-          ) : (processState === ProcessState.MINTING || isConfirming) ? (
-            <button disabled style={{...styles.primaryButton, opacity:0.7}}>MINTING...</button>
+            <button onClick={handleMint} style={styles.primaryButton}>
+              MINT NFT NOW
+            </button>
+          ) : processState === ProcessState.MINTING || isConfirming ? (
+            <button disabled style={{ ...styles.primaryButton, opacity: 0.7 }}>
+              MINTING...
+            </button>
           ) : processState === ProcessState.MINT_SUCCESS ? (
             <div style={styles.successContainer}>
-                <div style={styles.successBadge}>✓ MINTED!</div>
-                <button onClick={() => window.open(`https://warpcast.com/~/compose?text=I%20am%20a%20Chad!&embeds[]=https://zora.co/collect/base:${CHAD_NFT_CONTRACT_ADDRESS}`, '_blank')} style={styles.shareButton}>SHARE</button>
-                <button onClick={() => window.open(`https://testnets.opensea.io/assets/base-sepolia/${CHAD_NFT_CONTRACT_ADDRESS}`, '_blank')} style={styles.openseaButton}>OPENSEA</button>
+              <div style={styles.successBadge}>✓ MINTED!</div>
+              <button
+                onClick={() =>
+                  window.open(
+                    `https://warpcast.com/~/compose?text=I%20am%20a%20Chad!&embeds[]=https://zora.co/collect/base:${CHAD_NFT_CONTRACT_ADDRESS}`,
+                    '_blank'
+                  )
+                }
+                style={styles.shareButton}
+              >
+                SHARE
+              </button>
+              <button
+                onClick={() =>
+                  window.open(
+                    `https://testnets.opensea.io/assets/base-sepolia/${CHAD_NFT_CONTRACT_ADDRESS}`,
+                    '_blank'
+                  )
+                }
+                style={styles.openseaButton}
+              >
+                OPENSEA
+              </button>
             </div>
           ) : null}
         </div>
@@ -276,11 +357,28 @@ export default function Home() {
 }
 
 const styles: { [key: string]: React.CSSProperties } = {
-  container: { minHeight: '100vh', backgroundColor: THEME.background, color: THEME.text, fontFamily: 'sans-serif', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px' },
+  container: {
+    minHeight: '100vh',
+    backgroundColor: THEME.background,
+    color: THEME.text,
+    fontFamily: 'sans-serif',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    padding: '20px',
+  },
   header: { textAlign: 'center', marginBottom: '30px', maxWidth: '600px' },
   title: { fontSize: '3rem', fontWeight: '900', color: THEME.primary, margin: '0 0 10px 0', textTransform: 'uppercase' },
   subtitle: { color: '#ccc', fontSize: '1rem', marginBottom: '20px' },
-  statsBadge: { display: 'inline-block', backgroundColor: '#3e2c16', border: `2px solid ${THEME.primary}`, color: '#fbbf24', padding: '8px 20px', borderRadius: '20px', fontWeight: 'bold' },
+  statsBadge: {
+    display: 'inline-block',
+    backgroundColor: '#3e2c16',
+    border: `2px solid ${THEME.primary}`,
+    color: '#fbbf24',
+    padding: '8px 20px',
+    borderRadius: '20px',
+    fontWeight: 'bold',
+  },
   mainCard: { width: '100%', maxWidth: '400px', backgroundColor: '#251830', border: `4px solid ${THEME.border}`, borderRadius: '20px', padding: '20px' },
   profileCard: { backgroundColor: THEME.cardBg, border: `2px solid ${THEME.primary}`, borderRadius: '12px', padding: '12px', marginBottom: '20px', position: 'relative' },
   profileHeader: { fontWeight: 'bold', color: '#fbbf24', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '10px' },
@@ -302,5 +400,4 @@ const styles: { [key: string]: React.CSSProperties } = {
   openseaButton: { width: '100%', padding: '14px', backgroundColor: THEME.opensea, color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' },
   errorBox: { backgroundColor: '#7f1d1d', color: '#fecaca', padding: '10px', borderRadius: '8px', marginBottom: '15px', border: '1px solid #ef4444', fontSize: '0.9rem' },
   rarityBadge: { position: 'absolute', top: '10px', right: '10px', backgroundColor: '#fbbf24', color: '#000', padding: '5px 10px', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.8rem', boxShadow: '0 2px 5px rgba(0,0,0,0.3)' },
-  debugInput: { width: '100%', padding: '8px', borderRadius: '6px', border: `1px solid ${THEME.border}`, backgroundColor: '#1e1136', color: '#fff', fontSize: '1rem', marginTop: '5px' }
 };
