@@ -1,10 +1,9 @@
 'use client';
 
 import React, { useCallback, useState, useEffect } from 'react';
-import { useMiniKit } from '@coinbase/onchainkit/frame';
+// Rimosso useMiniKit per sbloccare il deploy su Vercel
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useConnect } from 'wagmi';
 import { baseSepolia } from 'wagmi/chains';
-import { minikitConfig } from '../minikit.config'; 
 
 // --- STILI E CONFIGURAZIONE ---
 const THEME = {
@@ -18,7 +17,8 @@ const THEME = {
   successBg: '#14532d',
   border: '#4c2f7a',
   opensea: '#2081e2',
-  share: '#10b981'
+  share: '#10b981',
+  debugInput: '#4a044e'
 };
 
 const CHAD_NFT_CONTRACT_ADDRESS = '0xA72449e2Bb68E7A331921586498739a56b9d4D25';
@@ -55,9 +55,7 @@ interface UserData {
 }
 
 export default function Home() {
-  // FIX: 'as any' per evitare errori di build TypeScript su Vercel
-  const { user, connect: connectMiniKit } = useMiniKit() as any;
-  
+  // Usiamo solo Wagmi per ora per garantire il deploy
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
   
@@ -71,7 +69,7 @@ export default function Home() {
   const [metadataUri, setMetadataUri] = useState<string | null>(null);
   const [traits, setTraits] = useState<any[]>([]);
   
-  // Stato per il FID manuale (Debug/Test)
+  // FID Manuale per test
   const [manualFid, setManualFid] = useState<string>("");
 
   useEffect(() => {
@@ -86,19 +84,27 @@ export default function Home() {
   }, [mintError]);
 
   const handleConnect = useCallback(() => {
-    if (connectMiniKit) {
-      connectMiniKit();
+    // Logica di connessione standard Wagmi
+    const coinbaseConnector = connectors.find(c => c.id === 'coinbaseWalletSDK');
+    const metamaskConnector = connectors.find(c => c.name.toLowerCase().includes('metamask'));
+    const injectedConnector = connectors.find(c => c.id === 'injected');
+
+    if (coinbaseConnector) {
+        connect({ connector: coinbaseConnector });
+    } else if (metamaskConnector) {
+        connect({ connector: metamaskConnector });
+    } else if (injectedConnector) {
+        connect({ connector: injectedConnector });
     } else {
-      const coinbaseConnector = connectors.find(c => c.id === 'coinbaseWalletSDK');
-      if (coinbaseConnector) connect({ connector: coinbaseConnector });
+        if (connectors.length > 0) connect({ connector: connectors[0] });
+        else alert("Nessun wallet trovato.");
     }
-  }, [connectMiniKit, connectors, connect]);
+  }, [connectors, connect]);
 
   const handleCreateChad = async () => {
-    // USA IL FID MANUALE SE C'È, ALTRIMENTI QUELLO RILEVATO, ALTRIMENTI IL FALLBACK
-    const effectiveFid = manualFid ? parseInt(manualFid) : (user?.fid || 999999);
-    
-    const wallet = (user?.walletAddress || address) as `0x${string}`;
+    // Usa il FID manuale se inserito, altrimenti un fallback
+    const effectiveFid = manualFid ? parseInt(manualFid) : 999999;
+    const wallet = address as `0x${string}`;
 
     if (!wallet) {
         setError("Collega il wallet per iniziare!");
@@ -109,30 +115,24 @@ export default function Home() {
     try {
       // A. Recupero PFP
       setProcessState(ProcessState.FETCHING_PFP);
-      let currentPfp = user?.pfpUrl;
+      let currentPfp = null;
       
-      // Se non abbiamo il PFP ma abbiamo un FID, lo chiediamo all'API
-      if (!currentPfp) {
-          try {
-            const res = await fetch(`/api/get-pfp?fid=${effectiveFid}`);
-            const data = await res.json();
-            if (data.pfpUrl) currentPfp = data.pfpUrl;
-          } catch (e) { console.log('Errore PFP API', e)}
-      }
+      try {
+        const res = await fetch(`/api/get-pfp?fid=${effectiveFid}`);
+        const data = await res.json();
+        if (data.pfpUrl) currentPfp = data.pfpUrl;
+      } catch (e) { console.log('Errore PFP API', e)}
       
       if (!currentPfp) currentPfp = "https://placehold.co/400x400/png?text=NO+PFP";
 
-      setUserData({ address: wallet, fid: effectiveFid, pfpUrl: currentPfp, displayName: user?.username || `Fid-${effectiveFid}` });
+      setUserData({ address: wallet, fid: effectiveFid, pfpUrl: currentPfp, displayName: `Fid-${effectiveFid}` });
 
       // B. AI Transformation
       setProcessState(ProcessState.TRANSFORMING);
       const aiRes = await fetch('/api/transform', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            pfpUrl: currentPfp,
-            fid: effectiveFid 
-        })
+        body: JSON.stringify({ pfpUrl: currentPfp, fid: effectiveFid })
       });
       const aiData = await aiRes.json();
       
@@ -179,10 +179,10 @@ export default function Home() {
     });
   };
 
-  const isUserConnected = isConnected || !!user;
+  const isUserConnected = isConnected;
   
-  // *** DEFINIZIONE VARIABILE ***
-  const displayImage = chadImage || userData?.pfpUrl || user?.pfpUrl || "https://placehold.co/400x400/2d1b4e/835fb3/png?text=?";
+  // Variabile per l'immagine da mostrare
+  const displayImage = chadImage || userData?.pfpUrl || "https://placehold.co/400x400/2d1b4e/835fb3/png?text=?";
 
   return (
     <div style={styles.container}>
@@ -200,12 +200,14 @@ export default function Home() {
              <div style={styles.profileHeader}>YOUR PROFILE</div>
              <div style={styles.profileContent}>
                <img 
-                 src={userData?.pfpUrl || user?.pfpUrl || "https://placehold.co/50x50/png"} 
+                 src={userData?.pfpUrl || "https://placehold.co/50x50/png"} 
                  style={styles.profileImage} 
                  alt="Profile"
                />
                <div style={styles.profileInfo}>
-                 <div style={styles.username}>@{userData?.displayName || user?.username || "User"}</div>
+                 <div style={styles.username}>
+                    {userData?.displayName || (address ? `${address.slice(0,6)}...` : "User")}
+                 </div>
                  <div style={styles.statusText}>Connected</div>
                </div>
                <div style={styles.checkIcon}>✓</div>
@@ -214,7 +216,7 @@ export default function Home() {
              {/* CAMPO DEBUG FID */}
              <div style={{marginTop: '15px', borderTop: `1px solid ${THEME.border}`, paddingTop: '10px'}}>
                <label style={{color: THEME.textSecondary, fontSize: '0.8rem', display: 'block', marginBottom: '5px'}}>
-                 TEST FID (Lascia vuoto per il tuo):
+                 TEST FID (Inserisci FID per test):
                </label>
                <input 
                  type="number" 
@@ -253,7 +255,7 @@ export default function Home() {
 
         <div style={styles.actionsArea}>
           {!isUserConnected ? (
-            <button onClick={() => handleConnect()} style={styles.primaryButton}>CONNECT WALLET</button>
+            <button onClick={handleConnect} style={styles.primaryButton}>CONNECT WALLET</button>
           ) : processState === ProcessState.INITIAL ? (
             <button onClick={handleCreateChad} style={styles.primaryButton}>CREATE CHAD AI</button>
           ) : processState === ProcessState.MINT_READY ? (
