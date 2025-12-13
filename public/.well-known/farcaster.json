@@ -9,7 +9,7 @@
     "version": "1",
     "iconUrl": "https://farchad.vercel.app/icon.png",
     "homeUrl": "https://farchad.vercel.app",
-    "imageUrl": "https://farchad.vercel.app/image.png",
+    "imageUrl": "https://farchad.vercel.app/icon.png",
     "splashImageUrl": "https://farchad.vercel.app/splash.png",
     "splashBackgroundColor": "#1a1025",
     "webhookUrl": "https://farchad.vercel.app/api/webhook",
