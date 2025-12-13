@@ -1,11 +1,12 @@
-'use client';
+'use client'
 
-import { ReactNode, useState } from 'react';
-import { WagmiProvider, createConfig, http } from 'wagmi';
-import { baseSepolia } from 'wagmi/chains'; // Usa Sepolia per i test
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { OnchainKitProvider } from '@coinbase/onchainkit';
-import { coinbaseWallet, injected, metaMask } from 'wagmi/connectors';
+import { ReactNode, useState, useEffect } from 'react'
+import { WagmiProvider, createConfig, http } from 'wagmi'
+import { baseSepolia } from 'wagmi/chains'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { OnchainKitProvider } from '@coinbase/onchainkit'
+import { coinbaseWallet, injected, metaMask } from 'wagmi/connectors'
+import sdk from '@farcaster/frame-sdk'
 
 // Configurazione Wagmi per Base Sepolia
 const config = createConfig({
@@ -28,7 +29,21 @@ const config = createConfig({
 })
 
 export function Providers({ children }: { children: ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(() => new QueryClient())
+
+  useEffect(() => {
+    const notifyReady = async () => {
+      try {
+        await sdk.actions.ready()
+        console.log('[Farcaster] sdk.actions.ready() called')
+      } catch (err) {
+        // fuori da Farcaster (browser normale, localhost, ecc.) è NORMALE
+        console.log('[Farcaster] sdk.actions.ready() skipped')
+      }
+    }
+
+    notifyReady()
+  }, [])
 
   return (
     <WagmiProvider config={config}>
@@ -37,10 +52,10 @@ export function Providers({ children }: { children: ReactNode }) {
           apiKey={process.env.NEXT_PUBLIC_ONCHAINKIT_API_KEY}
           chain={baseSepolia}
           config={{
-             appearance: { mode: "auto", theme: "base" },
+            appearance: { mode: 'auto', theme: 'base' },
           }}
           miniKit={{
-            enabled: true, // Questo è essenziale per Farcaster
+            enabled: true,
             autoConnect: true,
           }}
         >
@@ -48,5 +63,5 @@ export function Providers({ children }: { children: ReactNode }) {
         </OnchainKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
-  );
+  )
 }
