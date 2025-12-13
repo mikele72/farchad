@@ -1,14 +1,13 @@
 'use client'
 
-import { ReactNode, useState, useEffect } from 'react'
+import { ReactNode, useEffect, useState } from 'react'
 import { WagmiProvider, createConfig, http } from 'wagmi'
 import { baseSepolia } from 'wagmi/chains'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { OnchainKitProvider } from '@coinbase/onchainkit'
 import { coinbaseWallet, injected, metaMask } from 'wagmi/connectors'
-import sdk from '@farcaster/miniapp-sdk'
+import { sdk, isInMiniApp } from '@farcaster/miniapp-sdk'
 
-// Configurazione Wagmi per Base Sepolia
 const config = createConfig({
   chains: [baseSepolia],
   transports: { [baseSepolia.id]: http() },
@@ -32,17 +31,16 @@ export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient())
 
   useEffect(() => {
-    const notifyReady = async () => {
+    const run = async () => {
       try {
+        if (!isInMiniApp()) return
         await sdk.actions.ready()
-        console.log('[Farcaster] sdk.actions.ready() called')
-      } catch (err) {
-        // fuori da Farcaster (browser normale, localhost, ecc.) è NORMALE
-        console.log('[Farcaster] sdk.actions.ready() skipped', err)
+        console.log('[miniapp] ready chiamato')
+      } catch (e) {
+        console.log('[miniapp] ready fallito', e)
       }
     }
-
-    notifyReady()
+    run()
   }, [])
 
   return (
@@ -51,13 +49,8 @@ export function Providers({ children }: { children: ReactNode }) {
         <OnchainKitProvider
           apiKey={process.env.NEXT_PUBLIC_ONCHAINKIT_API_KEY}
           chain={baseSepolia}
-          config={{
-            appearance: { mode: 'auto', theme: 'base' },
-          }}
-          miniKit={{
-            enabled: true,
-            autoConnect: true,
-          }}
+          config={{ appearance: { mode: 'auto', theme: 'base' } }}
+          miniKit={{ enabled: true, autoConnect: true }}
         >
           {children}
         </OnchainKitProvider>
