@@ -1,43 +1,46 @@
-import { ReactNode } from "react";
-import './globals.css'; 
-import { Providers } from './providers'; 
-import { Metadata } from 'next';
+import { ReactNode } from 'react'
+import './globals.css'
+import { Providers } from './providers'
+import type { Metadata } from 'next'
 
-// Sostituisci questo con il tuo dominio Vercel REALE (senza slash finale)
-const APP_URL = 'https://farchad.vercel.app'; 
+const APP_URL = 'https://farchad.vercel.app'
 
 export const metadata: Metadata = {
-  title: 'Farchad',
+  title: 'Farchad v2 Test',
   description: 'Create your Chad NFT',
   openGraph: {
     title: 'Farchad',
     description: 'Transform your PFP into a Chad',
-    images: [`${APP_URL}/api/og`], // O un'immagine statica
+    images: [`${APP_URL}/image.png`],
   },
   other: {
-    // 1. Timbro Base (già presente)
-    'base:app_id': '693850cdff7c0880cb8b690f', 
+    // Base App id (ok)
+    'base:app_id': '693850cdff7c0880cb8b690f',
 
-    // 2. METADATI FARCASTER FRAME (Quelli che mancavano!)
-    'fc:frame': 'vNext',
-    'fc:frame:image': 'https://placehold.co/600x400/835fb3/ffffff/png?text=LAUNCH+FARCHAD',
-    'fc:frame:button:1': 'Launch App',
-    'fc:frame:button:1:action': 'link',
-    'fc:frame:button:1:target': APP_URL, // Apre la tua app
-    'fc:frame:post_url': `${APP_URL}/api/frame-post`, // Opzionale
+    // Mini App embed metadata (questo è quello che l’Embed Tool vuole)
+    'fc:miniapp': JSON.stringify({
+      version: 'next',
+      imageUrl: `${APP_URL}/image.png`,
+      button: {
+        title: 'Launch Farchad',
+        action: {
+          type: 'launch_miniapp',
+          name: 'Farchad',
+          url: APP_URL,
+          splashImageUrl: `${APP_URL}/splash.png`,
+          splashBackgroundColor: '#1a1025',
+        },
+      },
+    }),
   },
-};
+}
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
         <Providers>{children}</Providers>
       </body>
     </html>
-  );
+  )
 }
