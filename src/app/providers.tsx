@@ -31,17 +31,25 @@ export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient())
 
   useEffect(() => {
-    const run = async () => {
-      try {
-        if (!isInMiniApp()) return
-        await sdk.actions.ready()
-        console.log('[miniapp] ready chiamato')
-      } catch (e) {
-        console.log('[miniapp] ready fallito', e)
-      }
+  console.log('[debug] Providers montato')
+
+  const run = async () => {
+    try {
+      const inside = isInMiniApp()
+      console.log('[debug] isInMiniApp =', inside)
+
+      if (!inside) return
+
+      console.log('[debug] chiamo sdk.actions.ready()...')
+      await sdk.actions.ready()
+      console.log('[debug] ready OK')
+    } catch (e) {
+      console.log('[debug] ready ERRORE', e)
     }
-    run()
-  }, [])
+  }
+
+  run()
+}, [])
 
   return (
     <WagmiProvider config={config}>
