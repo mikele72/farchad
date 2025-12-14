@@ -6,7 +6,7 @@ import { baseSepolia } from 'wagmi/chains'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { OnchainKitProvider } from '@coinbase/onchainkit'
 import { coinbaseWallet, injected, metaMask } from 'wagmi/connectors'
-import { sdk, isInMiniApp } from '@farcaster/miniapp-sdk'
+import sdk from '@farcaster/miniapp-sdk'
 
 const config = createConfig({
   chains: [baseSepolia],
@@ -31,25 +31,22 @@ export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient())
 
   useEffect(() => {
-  console.log('[debug] Providers montato')
+    console.log('[debug] Providers montato')
 
-  const run = async () => {
-    try {
-      const inside = isInMiniApp()
-      console.log('[debug] isInMiniApp =', inside)
+    const run = async () => {
+      try {
+        // aspetta un tick per evitare casini di hydration
+        await new Promise((r) => setTimeout(r, 0))
 
-      if (!inside) return
-
-      console.log('[debug] chiamo sdk.actions.ready()...')
-      await sdk.actions.ready()
-      console.log('[debug] ready OK')
-    } catch (e) {
-      console.log('[debug] ready ERRORE', e)
+        await sdk.actions.ready()
+        console.log('[debug] sdk.actions.ready() OK')
+      } catch (e) {
+        console.log('[debug] sdk.actions.ready() fallita (normale fuori dalla miniapp)', e)
+      }
     }
-  }
 
-  run()
-}, [])
+    run()
+  }, [])
 
   return (
     <WagmiProvider config={config}>

@@ -10,8 +10,8 @@ const nextConfig = {
   },
   webpack: (config) => {
     // Gestione pacchetti problematici per Web3
-    config.externals.push('pino-pretty', 'lokijs', 'encoding');
-    return config;
+    config.externals.push('pino-pretty', 'lokijs', 'encoding')
+    return config
   },
   async headers() {
     return [
@@ -29,7 +29,25 @@ const nextConfig = {
               object-src 'none';
               base-uri 'self';
               form-action 'self';
-              frame-ancestors 'self' https://warpcast.com https://*.farcaster.xyz;
+
+              /* CONSENTI EMBED: Farcaster/Warpcast + Base Build */
+              frame-ancestors 'self'
+                https://warpcast.com
+                https://*.farcaster.xyz
+                https://farcaster.xyz
+                https://base.build
+                https://*.base.build
+                https://*.base.dev;
+
+              /* iframe che la pagina può caricare (extra safe) */
+              frame-src 'self'
+                https://warpcast.com
+                https://*.farcaster.xyz
+                https://farcaster.xyz
+                https://base.build
+                https://*.base.build
+                https://*.baso.dev;
+
               connect-src 'self' https://* wss://* http://localhost:*;
             `.replace(/\s{2,}/g, ' ').trim(),
           },
@@ -47,8 +65,8 @@ const nextConfig = {
           },
         ],
       },
-    ];
+    ]
   },
-};
+}
 
-export default nextConfig;
+export default nextConfig
