@@ -71,4 +71,14 @@ export function Providers({ children }: { children: ReactNode }) {
           chain={baseSepolia}
           config={{ appearance: { mode: 'auto', theme: 'base' } }}
           // ❗ miniKit SOLO fuori da Farcaster
-          miniKi
+          miniKit={{
+            enabled: !isMiniApp,
+            autoConnect: !isMiniApp,
+          }}
+        >
+          {children}
+        </OnchainKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
+  )
+}
