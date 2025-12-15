@@ -5,9 +5,9 @@ import { WagmiProvider, createConfig, http } from 'wagmi'
 import { baseSepolia } from 'wagmi/chains'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { OnchainKitProvider } from '@coinbase/onchainkit'
-import { coinbaseWallet, injected, metaMask } from 'wagmi/connectors'
+import { coinbaseWallet, injected } from 'wagmi/connectors'
 import sdk from '@farcaster/miniapp-sdk'
-import { farcasterMiniApp as miniAppConnector } from '@farcaster/miniapp-wagmi-connector'
+import { farcasterMiniApp } from '@farcaster/miniapp-wagmi-connector'
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient())
@@ -21,48 +21,42 @@ export function Providers({ children }: { children: ReactNode }) {
 
         if (inside) {
           await sdk.actions.ready()
-          console.log('[debug] farcaster miniapp: ready OK')
+          console.log('[farcaster] miniapp ready')
         } else {
-          console.log('[debug] not in farcaster miniapp')
+          console.log('[app] running outside farcaster')
         }
-      } catch (e) {
-        console.log('[debug] miniapp detect/ready failed (ok outside miniapp)', e)
+      } catch (err) {
+        console.log('[farcaster] detect failed (normal outside)', err)
         setIsMiniApp(false)
       }
     }
+
     boot()
   }, [])
 
   const wagmiConfig = useMemo(() => {
-    // Finché non sappiamo dove siamo, non montiamo wagmi (evita casino/hydration)
+    // aspettiamo di sapere dove siamo
     if (isMiniApp === null) return null
 
-    // Se siamo dentro Farcaster: usa SOLO il connector Farcaster (wallet interno)
+    // 🔵 DENTRO FARCASTER → SOLO wallet Farcaster
     if (isMiniApp) {
       return createConfig({
         chains: [baseSepolia],
         transports: { [baseSepolia.id]: http() },
-        connectors: [miniAppConnector()],
+        connectors: [farcasterMiniApp()],
       })
     }
 
-    // Fuori da Farcaster: i tuoi connector “normali” (desktop/browser/Base ecc.)
+    // 🟣 FUORI FARCASTER → Base Wallet / browser
     return createConfig({
       chains: [baseSepolia],
       transports: { [baseSepolia.id]: http() },
       connectors: [
-        metaMask({
-          dappMetadata: {
-            name: 'Farchad',
-            url: 'https://farchad.vercel.app',
-            iconUrl: 'https://farchad.vercel.app/icon.png',
-          },
-        }),
-        injected(),
         coinbaseWallet({
-          appName: 'farchad',
+          appName: 'Farchad',
           preference: 'smartWalletOnly',
         }),
+        injected(), // fallback browser
       ],
     })
   }, [isMiniApp])
@@ -76,13 +70,5 @@ export function Providers({ children }: { children: ReactNode }) {
           apiKey={process.env.NEXT_PUBLIC_ONCHAINKIT_API_KEY}
           chain={baseSepolia}
           config={{ appearance: { mode: 'auto', theme: 'base' } }}
-          // IMPORTANT: OnchainKit miniKit lo teniamo SOLO fuori da Farcaster
-          // dentro Farcaster vogliamo il wallet Farcaster, non quello Base
-          miniKit={{ enabled: !isMiniApp, autoConnect: !isMiniApp }}
-        >
-          {children}
-        </OnchainKitProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
-  )
-}
+          // ❗ miniKit SOLO fuori da Farcaster
+          miniKi
