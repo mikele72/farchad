@@ -1,121 +1,174 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 
 const FAL_API_KEY = process.env.FAL_API_KEY;
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL;
 
-// --- CONFIGURAZIONE RARITÀ ---
+// Base canonica (opzione A: public/)
+const BASE_CANON_IMAGE_URL = `${APP_URL}/farchad.png`;
+
+// --- CONFIGURAZIONE RARITÀ (VERSIONE MOSTRICIATTOLO) ---
 const POOLS = {
   COMMON: [
-    'wearing black sunglasses', 
-    'wearing a baseball cap', 
-    'wearing a beanie',
-    'wearing a t-shirt',
-    '' // Clean
+    "no accessories",
+    "simple collar",
+    "slightly scratched fur",
+    "neutral expression"
   ],
   UNCOMMON: [
-    'smoking a cigar', 
-    'wearing a hoodie', 
-    'wearing 3D glasses',
-    'wearing a leather jacket',
-    'with a toothpick in mouth'
+    "leather strap",
+    "bone necklace",
+    "scarred eye",
+    "confident grin"
   ],
   RARE: [
-    'wearing a black tuxedo', 
-    'wearing a thick gold chain', 
-    'wearing a monocle',
-    'with a robotic eye'
+    "golden chain",
+    "mechanical eye",
+    "glowing markings on the body",
+    "dark mysterious expression"
   ],
   LEGENDARY: [
-    'wearing a golden king crown', 
-    'with glowing red laser eyes',
-    'wearing a futuristic space suit',
-    'surrounded by a golden aura'
+    "crown of horns",
+    "glowing eyes",
+    "golden aura surrounding the body",
+    "ancient mythical presence"
   ]
 };
 
 export async function POST(req: NextRequest) {
   try {
-    const { pfpUrl, fid } = await req.json();
+    const { fid } = await req.json();
 
-    if (!FAL_API_KEY) return NextResponse.json({ error: 'FAL_API_KEY mancante' }, { status: 500 });
+    if (!FAL_API_KEY) {
+      return NextResponse.json(
+        { error: "FAL_API_KEY mancante" },
+        { status: 500 }
+      );
+    }
 
-    // 1. Calcolo Rarità
+    if (!APP_URL) {
+      return NextResponse.json(
+        { error: "NEXT_PUBLIC_APP_URL mancante" },
+        { status: 500 }
+      );
+    }
+
+    // --- 1. CALCOLO RARITÀ ---
     const isOG = fid && fid < 25000;
-    const roll = Math.random() * 100; 
+    const roll = Math.random() * 100;
 
-    let tier = 'COMMON';
+    let tier: keyof typeof POOLS = "COMMON";
     let accessoryPool = POOLS.COMMON;
 
     if (isOG) {
-       if (roll > 95) { tier = 'LEGENDARY'; accessoryPool = POOLS.LEGENDARY; }
-       else if (roll > 70) { tier = 'RARE'; accessoryPool = POOLS.RARE; }
-       else if (roll > 30) { tier = 'UNCOMMON'; accessoryPool = POOLS.UNCOMMON; }
+      if (roll > 95) {
+        tier = "LEGENDARY";
+        accessoryPool = POOLS.LEGENDARY;
+      } else if (roll > 70) {
+        tier = "RARE";
+        accessoryPool = POOLS.RARE;
+      } else if (roll > 30) {
+        tier = "UNCOMMON";
+        accessoryPool = POOLS.UNCOMMON;
+      }
     } else {
-       if (roll > 99) { tier = 'LEGENDARY'; accessoryPool = POOLS.LEGENDARY; }
-       else if (roll > 89) { tier = 'RARE'; accessoryPool = POOLS.RARE; }
-       else if (roll > 59) { tier = 'UNCOMMON'; accessoryPool = POOLS.UNCOMMON; }
+      if (roll > 99) {
+        tier = "LEGENDARY";
+        accessoryPool = POOLS.LEGENDARY;
+      } else if (roll > 89) {
+        tier = "RARE";
+        accessoryPool = POOLS.RARE;
+      } else if (roll > 59) {
+        tier = "UNCOMMON";
+        accessoryPool = POOLS.UNCOMMON;
+      }
     }
 
-    const randomAccessory = accessoryPool[Math.floor(Math.random() * accessoryPool.length)];
-    const accessoryTrait = randomAccessory ? randomAccessory.replace('wearing ', '').replace('with ', '') : 'None';
+    const randomAccessory =
+      accessoryPool[Math.floor(Math.random() * accessoryPool.length)];
 
-    const showBaseLogo = tier === 'LEGENDARY' || tier === 'RARE' || isOG;
-    const baseLogoPrompt = showBaseLogo 
-        ? " Wearing a round electric blue pin badge on the chest." 
-        : "";
-
-    // 2. Prompt OTTIMIZZATO PER LA SOMIGLIANZA
+    // --- 2. PROMPT (ANCORATO ALLA BASE CANONICA) ---
     const prompt = `
-      Redraw the reference image as a "Vector Art Cartoon". 
-      
-      MANDATORY CONSTRAINTS:
-      1. EXACT COLOR MATCH: You MUST use the exact hair color and skin tone from the reference image. If the reference is blonde, the output MUST be blonde.
-      2. FACIAL FEATURES: Maintain the presence or absence of a beard exactly as shown in the reference. Do not add a beard if there is none.
-      
-      STYLE TRANSFORMATION:
-      - Apply a "Giga Chad" facial structure (strong jawline, confident squint) BUT keep the original identity.
-      - Art Style: 2D flat vector illustration, thick black outlines, cell shading, sticker art style. No photorealism.
-      - Accessory: The character is ${randomAccessory || "wearing casual clothes"}.${baseLogoPrompt}
-    `;
+subtle refinement of the existing character
 
-    // 3. Chiamata Fal.ai
-    const response = await fetch("https://fal.run/fal-ai/flux/schnell", {
-      method: "POST",
-      headers: {
-        "Authorization": `Key ${FAL_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        prompt: prompt,
-        image_url: pfpUrl,
-        sync_mode: true,
-        // ABBASSIAMO LA STRENGTH
-        // 0.55 significa: "Mantieni molto dell'originale (colori, forme) ma cambia lo stile"
-        // Questo eviterà che i capelli biondi diventino castani.
-        strength: 0.55, 
-        seed: Math.floor(Math.random() * 1000000)
-      }),
-    });
+anthropomorphic fantasy creature inspired by a tasmanian devil, original species
 
-    if (!response.ok) throw new Error(await response.text());
-    
+keep the same pose, same silhouette, same proportions, same face structure
+
+do not change camera angle, do not change body shape, do not change head shape
+
+apply the following variation: ${randomAccessory}
+
+fantasy mascot style, clean stylized shapes, flat to semi-flat illustration
+
+neutral standing pose, full body visible, centered composition
+
+plain background, studio lighting
+`;
+
+    const negativePrompt = `
+human anatomy, chad, bodybuilder, six pack abs
+furry fandom style, sexualized anthropomorphic character
+realistic animal, detailed fur, hair strands
+anime, manga, chibi, cute
+horror, demon, gore, scary
+dynamic pose, action, movement
+complex background, scenery, environment
+cropped body, bust only
+`;
+
+    // --- 3. CHIAMATA FAL.AI (FLUX DEV IMAGE-TO-IMAGE) ---
+    const response = await fetch(
+      "https://fal.run/fal-ai/flux/dev/image-to-image",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Key ${FAL_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          image_url: BASE_CANON_IMAGE_URL,
+          prompt,
+          strength: 0.28, // micro-variazioni controllate
+          num_inference_steps: 12,
+          guidance_scale: 3.5,
+          num_images: 1,
+          output_format: "png",
+          enable_safety_checker: true,
+          sync_mode: true,
+          seed: Math.floor(Math.random() * 1_000_000)
+        })
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+
     const data = await response.json();
     const imageUrl = data.images?.[0]?.url;
 
-    if (!imageUrl) throw new Error('Nessuna immagine generata');
+    if (!imageUrl) {
+      throw new Error("Nessuna immagine generata");
+    }
 
-    return NextResponse.json({ 
-        imageUrl,
-        attributes: [
-            { trait_type: "Rarity Tier", value: tier }, 
-            { trait_type: "Accessory", value: accessoryTrait },
-            { trait_type: "Base Badge", value: showBaseLogo ? "Yes" : "No" },
-            { trait_type: "Is OG", value: isOG ? "Yes" : "No" },
-            { trait_type: "Style", value: "Vector Cartoon" }
-        ]
+    // --- 4. RISPOSTA FINALE ---
+    return NextResponse.json({
+      imageUrl,
+      attributes: [
+        { trait_type: "Rarity Tier", value: tier },
+        { trait_type: "Variation", value: randomAccessory },
+        { trait_type: "Is OG", value: isOG ? "Yes" : "No" },
+        {
+          trait_type: "Base Character",
+          value: "Tasmanian Fantasy Creature"
+        }
+      ]
     });
-
   } catch (error: any) {
     console.error("Transform Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message ?? "Errore sconosciuto" },
+      { status: 500 }
+    );
   }
 }
