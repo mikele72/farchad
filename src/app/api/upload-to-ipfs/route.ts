@@ -160,13 +160,14 @@ export async function POST(req: NextRequest) {
     });
 
     // gateway preview (per UI)
-    const imageUrl = `https://gateway.pinata.cloud/ipfs/${imageCid}`;
+    const previewUrl = `https://gateway.pinata.cloud/ipfs/${imageCid}`;
 
     return NextResponse.json({
       metadataUri: `ipfs://${jsonRes.data.IpfsHash}`,
       imageCid,
-      imageUrl,
+      previewUrl,
     });
+    
   } catch (error: any) {
     console.error("Upload Error:", error?.response?.data || error?.message || error);
     return NextResponse.json(

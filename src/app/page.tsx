@@ -220,7 +220,7 @@ export default function Home() {
       setMetadataUri(ipfsData.metadataUri);
 
       // opzionale: se l'API ritorna anche un imageUrl (vedi file sotto), mostriamo preview finale
-      if (ipfsData?.imageUrl) setChadImage(ipfsData.imageUrl);
+      if (ipfsData?.previewUrl) setChadImage(ipfsData.previewUrl);
 
       setProcessState(ProcessState.MINT_READY);
     } catch (e: any) {
