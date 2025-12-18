@@ -54,6 +54,11 @@ interface UserData {
   displayName?: string;
 }
 
+type RecipePreview = {
+  baseImagePath: string;
+  layers: string[];
+} | null;
+
 export default function Home() {
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
@@ -68,9 +73,19 @@ export default function Home() {
   const [fidLoading, setFidLoading] = useState(false);
 
   const [userData, setUserData] = useState<UserData | null>(null);
+
+  // ipfs preview finale (gateway)
   const [chadImage, setChadImage] = useState<string | null>(null);
+
+  // preview immediata (base + layers) senza ipfs
+  const [recipePreview, setRecipePreview] = useState<RecipePreview>(null);
+
   const [metadataUri, setMetadataUri] = useState<string | null>(null);
   const [traits, setTraits] = useState<any[]>([]);
+
+  // retry gateway preview
+  const [pendingPreviewBase, setPendingPreviewBase] = useState<string | null>(null);
+  const [previewAttempts, setPreviewAttempts] = useState<number>(0);
 
   useEffect(() => {
     if (isTxSuccessful) setProcessState(ProcessState.MINT_SUCCESS);
@@ -144,6 +159,30 @@ export default function Home() {
     }
   }, [connectors, connect]);
 
+  const startGatewayPreview = (baseUrl: string) => {
+    setPendingPreviewBase(baseUrl);
+    setPreviewAttempts(0);
+    // primo tentativo subito
+    setChadImage(`${baseUrl}?t=${Date.now()}`);
+  };
+
+  const scheduleRetry = () => {
+    if (!pendingPreviewBase) return;
+
+    const next = previewAttempts + 1;
+    setPreviewAttempts(next);
+
+    if (next > 6) {
+      // dopo un po' basta: lasciamo la recipe preview (non torniamo alla pfp)
+      return;
+    }
+
+    const delayMs = 700 + next * 450; // backoff leggero
+    setTimeout(() => {
+      setChadImage(`${pendingPreviewBase}?t=${Date.now()}`);
+    }, delayMs);
+  };
+
   const handleCreateChad = async () => {
     const wallet = address as `0x${string}`;
 
@@ -159,10 +198,13 @@ export default function Home() {
     setError(null);
 
     try {
-      // reset preview precedente
+      // reset stato precedente
       setChadImage(null);
+      setPendingPreviewBase(null);
+      setPreviewAttempts(0);
       setMetadataUri(null);
       setTraits([]);
+      setRecipePreview(null);
 
       // A. Recupero PFP
       setProcessState(ProcessState.FETCHING_PFP);
@@ -185,7 +227,7 @@ export default function Home() {
         displayName: `fid-${fid}`,
       });
 
-      // B. Transform = "ricetta" (base + layers + attributes)
+      // B. Transform = "ricetta"
       setProcessState(ProcessState.TRANSFORMING);
       const tRes = await fetch('/api/transform', {
         method: 'POST',
@@ -202,7 +244,10 @@ export default function Home() {
 
       setTraits(tData.attributes || []);
 
-      // C. Upload IPFS (compositing server-side con sharp)
+      // ✅ preview immediata (no ipfs): base + layer stack
+      setRecipePreview({ baseImagePath: tData.baseImagePath, layers: tData.layers });
+
+      // C. Upload IPFS
       setProcessState(ProcessState.UPLOADING_IPFS);
       const ipfsRes = await fetch('/api/upload-to-ipfs', {
         method: 'POST',
@@ -223,15 +268,14 @@ export default function Home() {
 
       setMetadataUri(ipfsData.metadataUri);
 
-      // preview robusta: previewUrl -> imageUrl legacy -> ricostruzione da imageCid
-      const preview =
+      // gateway preview (può arrivare in ritardo): retry senza tornare alla pfp
+      const previewBase =
         ipfsData?.previewUrl ||
         ipfsData?.imageUrl ||
         (ipfsData?.imageCid ? `https://gateway.pinata.cloud/ipfs/${ipfsData.imageCid}` : null);
 
-      if (preview) {
-        // cache-buster (gateway/propagazione)
-        setChadImage(`${preview}?t=${Date.now()}`);
+      if (previewBase) {
+        startGatewayPreview(previewBase);
       } else {
         console.log('ipfsData missing preview fields:', ipfsData);
       }
@@ -259,6 +303,7 @@ export default function Home() {
 
   const isUserConnected = isConnected;
 
+  // fallback finale: se non abbiamo chadImage, mostriamo recipe preview; se non c'è, pfp
   const displayImage =
     chadImage || userData?.pfpUrl || 'https://placehold.co/400x400/2d1b4e/835fb3/png?text=?';
 
@@ -317,17 +362,25 @@ export default function Home() {
                 {processState === ProcessState.UPLOADING_IPFS && 'SAVING TO IPFS...'}
               </div>
             </div>
-          ) : (
+          ) : chadImage ? (
             <img
               src={displayImage}
               style={styles.previewImage}
               alt="Preview"
-              onError={(e) => {
-                console.log('preview failed src=', (e.currentTarget as HTMLImageElement).src);
-                // fallback: torna alla pfp (evita box rotto)
-                setChadImage(null);
+              onError={() => {
+                // non buttare via tutto: retry gateway
+                scheduleRetry();
               }}
             />
+          ) : recipePreview ? (
+            <div style={styles.stackWrap}>
+              <img src={recipePreview.baseImagePath} style={styles.stackLayer} alt="base" />
+              {recipePreview.layers.map((p) => (
+                <img key={p} src={p} style={styles.stackLayer} alt={p} />
+              ))}
+            </div>
+          ) : (
+            <img src={displayImage} style={styles.previewImage} alt="Preview" />
           )}
 
           {chadImage &&
@@ -424,6 +477,11 @@ const styles: { [key: string]: React.CSSProperties } = {
   checkIcon: { marginLeft: 'auto', backgroundColor: THEME.primary, color: '#fff', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 'bold' },
   previewContainer: { width: '100%', aspectRatio: '1 / 1', backgroundColor: '#000', borderRadius: '12px', border: `4px solid ${THEME.border}`, overflow: 'hidden', marginBottom: '20px', position: 'relative' },
   previewImage: { width: '100%', height: '100%', objectFit: 'cover' },
+
+  // stack preview (base + layers)
+  stackWrap: { position: 'relative', width: '100%', height: '100%' },
+  stackLayer: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' },
+
   placeholderBox: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a1025' },
   loadingText: { color: THEME.primary, fontWeight: 'bold', fontSize: '1.2rem' },
   actionsArea: { display: 'flex', flexDirection: 'column', gap: '10px' },
