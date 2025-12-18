@@ -74,18 +74,19 @@ export default function Home() {
 
   const [userData, setUserData] = useState<UserData | null>(null);
 
-  // ipfs preview finale (gateway)
-  const [chadImage, setChadImage] = useState<string | null>(null);
-
-  // preview immediata (base + layers) senza ipfs
+  // preview locale: base + layers (sempre stabile, niente gateway)
   const [recipePreview, setRecipePreview] = useState<RecipePreview>(null);
+
+  // preview gateway (overlay sopra la recipe), ma SOLO quando carica
+  const [gatewayUrl, setGatewayUrl] = useState<string | null>(null);
+  const [gatewayReady, setGatewayReady] = useState(false);
+
+  // retry gateway
+  const [pendingGatewayBase, setPendingGatewayBase] = useState<string | null>(null);
+  const [gatewayAttempts, setGatewayAttempts] = useState(0);
 
   const [metadataUri, setMetadataUri] = useState<string | null>(null);
   const [traits, setTraits] = useState<any[]>([]);
-
-  // retry gateway preview
-  const [pendingPreviewBase, setPendingPreviewBase] = useState<string | null>(null);
-  const [previewAttempts, setPreviewAttempts] = useState<number>(0);
 
   useEffect(() => {
     if (isTxSuccessful) setProcessState(ProcessState.MINT_SUCCESS);
@@ -159,28 +160,30 @@ export default function Home() {
     }
   }, [connectors, connect]);
 
-  const startGatewayPreview = (baseUrl: string) => {
-    setPendingPreviewBase(baseUrl);
-    setPreviewAttempts(0);
-    // primo tentativo subito
-    setChadImage(`${baseUrl}?t=${Date.now()}`);
+  const startGateway = (base: string) => {
+    setPendingGatewayBase(base);
+    setGatewayAttempts(0);
+    setGatewayReady(false);
+    // setto subito un url con cache buster (ma lo mostro solo dopo onLoad)
+    setGatewayUrl(`${base}?t=${Date.now()}`);
   };
 
-  const scheduleRetry = () => {
-    if (!pendingPreviewBase) return;
+  const retryGateway = () => {
+    if (!pendingGatewayBase) return;
 
-    const next = previewAttempts + 1;
-    setPreviewAttempts(next);
+    const next = gatewayAttempts + 1;
+    setGatewayAttempts(next);
 
-    if (next > 6) {
-      // dopo un po' basta: lasciamo la recipe preview (non torniamo alla pfp)
+    if (next > 8) {
+      // dopo un po' basta: rimane solo lo stack locale (no flicker)
       return;
     }
 
-    const delayMs = 700 + next * 450; // backoff leggero
+    const delay = 800 + next * 500;
     setTimeout(() => {
-      setChadImage(`${pendingPreviewBase}?t=${Date.now()}`);
-    }, delayMs);
+      setGatewayReady(false);
+      setGatewayUrl(`${pendingGatewayBase}?t=${Date.now()}`);
+    }, delay);
   };
 
   const handleCreateChad = async () => {
@@ -198,13 +201,15 @@ export default function Home() {
     setError(null);
 
     try {
-      // reset stato precedente
-      setChadImage(null);
-      setPendingPreviewBase(null);
-      setPreviewAttempts(0);
+      // reset
       setMetadataUri(null);
       setTraits([]);
       setRecipePreview(null);
+
+      setGatewayUrl(null);
+      setGatewayReady(false);
+      setPendingGatewayBase(null);
+      setGatewayAttempts(0);
 
       // A. Recupero PFP
       setProcessState(ProcessState.FETCHING_PFP);
@@ -227,7 +232,7 @@ export default function Home() {
         displayName: `fid-${fid}`,
       });
 
-      // B. Transform = "ricetta"
+      // B. Transform = ricetta (base + layers)
       setProcessState(ProcessState.TRANSFORMING);
       const tRes = await fetch('/api/transform', {
         method: 'POST',
@@ -244,7 +249,7 @@ export default function Home() {
 
       setTraits(tData.attributes || []);
 
-      // ✅ preview immediata (no ipfs): base + layer stack
+      // ✅ preview immediata e stabile: stack locale
       setRecipePreview({ baseImagePath: tData.baseImagePath, layers: tData.layers });
 
       // C. Upload IPFS
@@ -268,17 +273,13 @@ export default function Home() {
 
       setMetadataUri(ipfsData.metadataUri);
 
-      // gateway preview (può arrivare in ritardo): retry senza tornare alla pfp
-      const previewBase =
+      // gateway (overlay): lo rendiamo visibile solo quando onLoad
+      const base =
         ipfsData?.previewUrl ||
         ipfsData?.imageUrl ||
         (ipfsData?.imageCid ? `https://gateway.pinata.cloud/ipfs/${ipfsData.imageCid}` : null);
 
-      if (previewBase) {
-        startGatewayPreview(previewBase);
-      } else {
-        console.log('ipfsData missing preview fields:', ipfsData);
-      }
+      if (base) startGateway(base);
 
       setProcessState(ProcessState.MINT_READY);
     } catch (e: any) {
@@ -302,11 +303,6 @@ export default function Home() {
   };
 
   const isUserConnected = isConnected;
-
-  // fallback finale: se non abbiamo chadImage, mostriamo recipe preview; se non c'è, pfp
-  const displayImage =
-    chadImage || userData?.pfpUrl || 'https://placehold.co/400x400/2d1b4e/835fb3/png?text=?';
-
   const createDisabled = fidLoading || !fid;
 
   return (
@@ -330,9 +326,7 @@ export default function Home() {
                 alt="Profile"
               />
               <div style={styles.profileInfo}>
-                <div style={styles.username}>
-                  {fid ? `fid-${fid}` : address ? `${address.slice(0, 6)}...` : 'User'}
-                </div>
+                <div style={styles.username}>{fid ? `fid-${fid}` : address ? `${address.slice(0, 6)}...` : 'User'}</div>
                 <div style={styles.statusText}>
                   {fidLoading ? 'detecting farcaster id...' : fid ? 'connected' : 'connected (no fid)'}
                 </div>
@@ -343,9 +337,7 @@ export default function Home() {
         ) : (
           <div style={{ ...styles.profileCard, opacity: 0.5 }}>
             <div style={styles.profileHeader}>YOUR PROFILE</div>
-            <div style={{ padding: '15px', textAlign: 'center', color: THEME.textSecondary }}>
-              Connect wallet to start
-            </div>
+            <div style={{ padding: '15px', textAlign: 'center', color: THEME.textSecondary }}>Connect wallet to start</div>
           </div>
         )}
 
@@ -362,28 +354,38 @@ export default function Home() {
                 {processState === ProcessState.UPLOADING_IPFS && 'SAVING TO IPFS...'}
               </div>
             </div>
-          ) : chadImage ? (
-            <img
-              src={displayImage}
-              style={styles.previewImage}
-              alt="Preview"
-              onError={() => {
-                // non buttare via tutto: retry gateway
-                scheduleRetry();
-              }}
-            />
-          ) : recipePreview ? (
-            <div style={styles.stackWrap}>
-              <img src={recipePreview.baseImagePath} style={styles.stackLayer} alt="base" />
-              {recipePreview.layers.map((p) => (
-                <img key={p} src={p} style={styles.stackLayer} alt={p} />
-              ))}
-            </div>
           ) : (
-            <img src={displayImage} style={styles.previewImage} alt="Preview" />
+            <div style={styles.stackWrap}>
+              {/* base fallback: se non c'è ricetta, mostra pfp */}
+              {!recipePreview ? (
+                <img
+                  src={userData?.pfpUrl || 'https://placehold.co/400x400/png?text=NO+PFP'}
+                  style={styles.stackLayer}
+                  alt="pfp"
+                />
+              ) : (
+                <>
+                  <img src={recipePreview.baseImagePath} style={styles.stackLayer} alt="base" />
+                  {recipePreview.layers.map((p) => (
+                    <img key={p} src={p} style={styles.stackLayer} alt={p} />
+                  ))}
+                </>
+              )}
+
+              {/* gateway overlay: visibile SOLO quando ha caricato */}
+              {gatewayUrl && (
+                <img
+                  src={gatewayUrl}
+                  style={{ ...styles.stackLayer, opacity: gatewayReady ? 1 : 0, transition: 'opacity 200ms linear' }}
+                  alt="gateway"
+                  onLoad={() => setGatewayReady(true)}
+                  onError={() => retryGateway()}
+                />
+              )}
+            </div>
           )}
 
-          {chadImage &&
+          {gatewayReady &&
             traits.some((t) => t.trait_type === 'Rarity' && (t.value === 'RARE' || t.value === 'LEGENDARY')) && (
               <div style={styles.rarityBadge}>✨ RARE TRAIT FOUND!</div>
             )}
@@ -426,10 +428,7 @@ export default function Home() {
               </button>
               <button
                 onClick={() =>
-                  window.open(
-                    `https://testnets.opensea.io/assets/base-sepolia/${CHAD_NFT_CONTRACT_ADDRESS}`,
-                    '_blank'
-                  )
+                  window.open(`https://testnets.opensea.io/assets/base-sepolia/${CHAD_NFT_CONTRACT_ADDRESS}`, '_blank')
                 }
                 style={styles.openseaButton}
               >
@@ -476,9 +475,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   statusText: { fontSize: '0.8rem', color: THEME.textSecondary },
   checkIcon: { marginLeft: 'auto', backgroundColor: THEME.primary, color: '#fff', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 'bold' },
   previewContainer: { width: '100%', aspectRatio: '1 / 1', backgroundColor: '#000', borderRadius: '12px', border: `4px solid ${THEME.border}`, overflow: 'hidden', marginBottom: '20px', position: 'relative' },
-  previewImage: { width: '100%', height: '100%', objectFit: 'cover' },
 
-  // stack preview (base + layers)
   stackWrap: { position: 'relative', width: '100%', height: '100%' },
   stackLayer: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' },
 
