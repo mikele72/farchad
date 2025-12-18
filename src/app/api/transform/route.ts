@@ -12,22 +12,32 @@ const LAYERS = {
 } as const;
 
 function hashSeed(input: string) {
-  // deterministic 32-bit hash -> 0..999999
+  // deterministic 32-bit hash
   let h = 2166136261;
   for (let i = 0; i < input.length; i++) {
     h ^= input.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  return (h >>> 0) % 1_000_000;
+  return h >>> 0;
+}
+
+// xorshift32: ottimo “mixer” veloce per evitare pattern con mod 2
+function xorshift32(x: number) {
+  x ^= x << 13;
+  x ^= x >>> 17;
+  x ^= x << 5;
+  return x >>> 0;
 }
 
 function pickDeterministic<T>(arr: readonly T[], seed: number, salt: string): T {
-  const s = hashSeed(`${seed}:${salt}`);
-  return arr[s % arr.length];
+  // invece di fare solo hash(seed:salt) e poi %2 (che crea pattern),
+  // facciamo mixing extra
+  const base = hashSeed(`${seed}:${salt}`);
+  const mixed = xorshift32(base ^ (seed >>> 0));
+  return arr[mixed % arr.length];
 }
 
 function layerNameFromPath(p: string) {
-  // "/traits/felpa1.png" -> "felpa1"
   const file = p.split("/").pop() ?? p;
   return file.replace(".png", "");
 }
@@ -39,9 +49,9 @@ export async function POST(req: NextRequest) {
     const pfpUrl = typeof body?.pfpUrl === "string" ? body.pfpUrl : "";
 
     // deterministic base seed (same fid => same outfit)
-    const seedBase = fid > 0 ? fid : hashSeed(pfpUrl || "fallback");
+    const seedBase = fid > 0 ? (fid >>> 0) : hashSeed(pfpUrl || "fallback");
 
-    // choose variant per layer deterministically
+    // choose variant per layer deterministically (but better mixed)
     const shoes = pickDeterministic(LAYERS.shoes, seedBase, "shoes");
     const pants = pickDeterministic(LAYERS.pants, seedBase, "pants");
     const hoodie = pickDeterministic(LAYERS.hoodie, seedBase, "hoodie");
@@ -51,7 +61,6 @@ export async function POST(req: NextRequest) {
     const layersOrdered = [shoes, pants, hoodie, cap];
 
     return NextResponse.json({
-      // non generiamo immagine qui: solo "ricetta"
       baseImagePath: BASE_CANON_IMAGE_PATH,
       layers: layersOrdered,
       attributes: [
