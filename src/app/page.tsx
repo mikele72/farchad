@@ -100,13 +100,13 @@ export default function Home() {
         const res = await fetch(`/api/get-fid?address=${address}`);
         const data = await res.json();
 
-        const foundFid = typeof data?.fid === 'number' ? data.fid : null
-        setFid(foundFid)
+        const foundFid = typeof data?.fid === 'number' ? data.fid : null;
+        setFid(foundFid);
 
         if (!foundFid) {
-          setError("couldn't find a farcaster fid for this wallet")
-          setProcessState(ProcessState.INITIAL)
-          return
+          setError("couldn't find a farcaster fid for this wallet");
+          setProcessState(ProcessState.INITIAL);
+          return;
         }
 
         setUserData({
@@ -114,8 +114,7 @@ export default function Home() {
           fid: foundFid,
           pfpUrl: data?.pfpUrl || 'https://placehold.co/50x50/png',
           displayName: data?.username ? `@${data.username}` : `fid-${foundFid}`,
-        })
-
+        });
 
         setProcessState(ProcessState.INITIAL);
       } catch (e: any) {
@@ -145,7 +144,7 @@ export default function Home() {
     }
   }, [connectors, connect]);
 
-    const handleCreateChad = async () => {
+  const handleCreateChad = async () => {
     const wallet = address as `0x${string}`;
 
     if (!wallet) {
@@ -160,6 +159,11 @@ export default function Home() {
     setError(null);
 
     try {
+      // reset preview precedente
+      setChadImage(null);
+      setMetadataUri(null);
+      setTraits([]);
+
       // A. Recupero PFP
       setProcessState(ProcessState.FETCHING_PFP);
       let currentPfp: string | null = null;
@@ -219,8 +223,18 @@ export default function Home() {
 
       setMetadataUri(ipfsData.metadataUri);
 
-      // opzionale: se l'API ritorna anche un imageUrl (vedi file sotto), mostriamo preview finale
-      if (ipfsData?.previewUrl) setChadImage(ipfsData.previewUrl);
+      // preview robusta: previewUrl -> imageUrl legacy -> ricostruzione da imageCid
+      const preview =
+        ipfsData?.previewUrl ||
+        ipfsData?.imageUrl ||
+        (ipfsData?.imageCid ? `https://gateway.pinata.cloud/ipfs/${ipfsData.imageCid}` : null);
+
+      if (preview) {
+        // cache-buster (gateway/propagazione)
+        setChadImage(`${preview}?t=${Date.now()}`);
+      } else {
+        console.log('ipfsData missing preview fields:', ipfsData);
+      }
 
       setProcessState(ProcessState.MINT_READY);
     } catch (e: any) {
@@ -228,7 +242,6 @@ export default function Home() {
       setProcessState(ProcessState.INITIAL);
     }
   };
-
 
   const handleMint = () => {
     if (!metadataUri || !userData) return;
@@ -255,7 +268,7 @@ export default function Home() {
     <div style={styles.container}>
       <div style={styles.header}>
         <h1 style={styles.title}>MINT FARCHAD</h1>
-        <p style={styles.subtitle}>Create your unique CHAD-style NFT 🐵</p>
+        <p style={styles.subtitle}>create your unique farchad nft</p>
         <div style={styles.statsBadge}>LIVE ON BASE SEPOLIA 🔵</div>
       </div>
 
@@ -300,12 +313,21 @@ export default function Home() {
               <div style={styles.loadingText}>
                 {processState === ProcessState.FETCHING_FID && 'GETTING FID...'}
                 {processState === ProcessState.FETCHING_PFP && 'GETTING PFP...'}
-                {processState === ProcessState.TRANSFORMING && 'GENERATING CHAD AI...'}
+                {processState === ProcessState.TRANSFORMING && 'BUILDING TRAITS...'}
                 {processState === ProcessState.UPLOADING_IPFS && 'SAVING TO IPFS...'}
               </div>
             </div>
           ) : (
-            <img src={displayImage} style={styles.previewImage} alt="Preview" />
+            <img
+              src={displayImage}
+              style={styles.previewImage}
+              alt="Preview"
+              onError={(e) => {
+                console.log('preview failed src=', (e.currentTarget as HTMLImageElement).src);
+                // fallback: torna alla pfp (evita box rotto)
+                setChadImage(null);
+              }}
+            />
           )}
 
           {chadImage &&
@@ -325,7 +347,7 @@ export default function Home() {
               disabled={createDisabled}
               style={{ ...styles.primaryButton, opacity: createDisabled ? 0.6 : 1 }}
             >
-              {fidLoading ? 'LOADING...' : !fid ? 'NO FID FOUND' : 'CREATE CHAD AI'}
+              {fidLoading ? 'LOADING...' : !fid ? 'NO FID FOUND' : 'CREATE FARCHAD'}
             </button>
           ) : processState === ProcessState.MINT_READY ? (
             <button onClick={handleMint} style={styles.primaryButton}>
@@ -341,7 +363,7 @@ export default function Home() {
               <button
                 onClick={() =>
                   window.open(
-                    `https://warpcast.com/~/compose?text=I%20am%20a%20Chad!&embeds[]=https://zora.co/collect/base:${CHAD_NFT_CONTRACT_ADDRESS}`,
+                    `https://warpcast.com/~/compose?text=I%20minted%20a%20Farchad!&embeds[]=https://zora.co/collect/base:${CHAD_NFT_CONTRACT_ADDRESS}`,
                     '_blank'
                   )
                 }
